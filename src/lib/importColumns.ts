@@ -68,15 +68,51 @@ export interface ImportError {
   errors: string[];
 }
 
-export interface ImportResult {
-  ok: boolean;
-  import_id?: number;
-  total?: number;
-  inserted?: number;
-  updated?: number;
-  rejected?: number;
-  errors?: ImportError[];
-  error?: string;
+/** Fields that hold a calendar date, a time of day, or a full timestamp. */
+const DATE_FIELDS = new Set([
+  "goods_receipt_date",
+  "storage_date",
+  "creation_date",
+  "confirmation_date",
+]);
+const TIME_FIELDS = new Set([
+  "goods_receipt_time",
+  "creation_time",
+  "confirmation_time",
+]);
+const TS_FIELDS = new Set([
+  "actual_start",
+  "actual_end",
+  "planned_start",
+  "created_date",
+]);
+
+/**
+ * Convert an Excel serial value (days since 1899-12-30) into its date, time and
+ * ISO parts, using UTC so the result never depends on the browser timezone or on
+ * the cell's display format.
+ */
+function excelSerialParts(serial: number) {
+  const ms = Math.round((serial - 25569) * 86400000);
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`,
+    time: `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`,
+    iso: d.toISOString(),
+  };
+}
+
+/** Convert a raw cell value for a date/time field into a normalized value. */
+function convertField(field: string, value: unknown): unknown {
+  if (typeof value !== "number" || !Number.isFinite(value)) return value;
+  if (DATE_FIELDS.has(field)) return excelSerialParts(value).date;
+  if (TIME_FIELDS.has(field)) return excelSerialParts(value).time;
+  if (TS_FIELDS.has(field)) {
+    // Full datetime cells are serial > 1; a bare fraction is a time of day.
+    return value >= 1 ? excelSerialParts(value).iso : excelSerialParts(value).time;
+  }
+  return value;
 }
 
 /** Normalize parsed Excel rows into backend-ready payloads using a column map. */
@@ -88,10 +124,21 @@ export function normalizeRows(
   return rows.map((raw) => {
     const out: Record<string, unknown> = {};
     for (const [header, field] of Object.entries(map)) {
-      out[field] = raw[header] ?? "";
+      out[field] = convertField(field, raw[header] ?? "");
     }
     return out;
   });
+}
+
+export interface ImportResult {
+  ok: boolean;
+  import_id?: number;
+  total?: number;
+  inserted?: number;
+  updated?: number;
+  rejected?: number;
+  errors?: ImportError[];
+  error?: string;
 }
 
 export interface ImportPayload {
