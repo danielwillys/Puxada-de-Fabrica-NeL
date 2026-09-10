@@ -1,0 +1,108 @@
+-- 1) Fix pull_times to exclude reversed tasks, 2) fix reconciliation sign, 3) remove verification test data
+
+create or replace view public.production_order_metrics as
+with basis as (
+  select coalesce((select value from public.system_settings where key = 'pull_completion_basis')::text, 'confirmed') as pull_basis
+),
+order_base as (
+  select
+    po.id,
+    po.order_number,
+    po.material_code,
+    po.material_description,
+    po.unit,
+    po.lot,
+    po.planned_quantity,
+    po.confirmed_quantity,
+    po.sap_supplied_quantity,
+    po.actual_start,
+    po.actual_end,
+    po.planned_start,
+    po.created_date,
+    case
+      when b.pull_basis = 'planned' then po.planned_quantity
+      when b.pull_basis = 'min' then least(coalesce(po.planned_quantity,0), coalesce(po.confirmed_quantity,0))
+      else coalesce(nullif(coalesce(po.confirmed_quantity,0),0), po.planned_quantity)
+    end as required_quantity
+  from public.production_orders po
+  cross join basis b
+),
+pulled as (
+  select
+    production_order,
+    coalesce(sum(quantity),0) as pulled_quantity,
+    count(*) as receipt_count
+  from public.production_receipts
+  where is_valid
+  group by production_order
+),
+pull_times as (
+  select
+    production_order,
+    min(case when creation_date is not null and creation_time is not null
+        then (creation_date + creation_time)::timestamp end) as first_pull_at,
+    max(case when creation_date is not null and creation_time is not null
+        then (creation_date + creation_time)::timestamp end) as last_pull_at
+  from public.warehouse_tasks
+  where process_type = '1020'
+    and task_status is distinct from 'A'
+  group by production_order
+)
+select
+  ob.id,
+  ob.order_number,
+  ob.material_code,
+  ob.material_description,
+  ob.unit,
+  ob.lot,
+  ob.planned_quantity,
+  ob.confirmed_quantity,
+  ob.sap_supplied_quantity,
+  ob.required_quantity,
+  coalesce(p.pulled_quantity,0) as pulled_quantity,
+  greatest(coalesce(ob.required_quantity,0) - coalesce(p.pulled_quantity,0), 0) as balance_quantity,
+  greatest(coalesce(p.pulled_quantity,0) - coalesce(ob.required_quantity,0), 0) as excess_quantity,
+  case
+    when coalesce(ob.required_quantity,0) > 0
+    then least(100, round(coalesce(p.pulled_quantity,0) / ob.required_quantity * 100, 2))
+    else 0
+  end as pull_efficiency_percent,
+  case
+    when coalesce(p.pulled_quantity,0) = 0 then 'not_started'
+    when abs(coalesce(p.pulled_quantity,0) - coalesce(ob.required_quantity,0)) <= 0.001 then 'completed'
+    when coalesce(p.pulled_quantity,0) < coalesce(ob.required_quantity,0) then 'in_progress'
+    else 'excess'
+  end::public.order_status as status,
+  ob.actual_start,
+  ob.actual_end,
+  ob.planned_start,
+  ob.created_date,
+  pt.first_pull_at,
+  pt.last_pull_at
+from order_base ob
+left join pulled p on p.production_order = ob.order_number
+left join pull_times pt on pt.production_order = ob.order_number;
+
+create or replace view public.sap_reconciliation as
+select
+  po.id,
+  po.order_number,
+  po.material_code,
+  po.material_description,
+  po.lot,
+  po.unit,
+  po.sap_supplied_quantity as sap_quantity,
+  m.pulled_quantity as physical_quantity,
+  round(coalesce(m.pulled_quantity,0) - coalesce(po.sap_supplied_quantity,0), 3) as difference_quantity,
+  case
+    when abs(coalesce(po.sap_supplied_quantity,0) - coalesce(m.pulled_quantity,0)) <= 0.001 then 'ok'
+    when coalesce(m.pulled_quantity,0) > coalesce(po.sap_supplied_quantity,0) then 'positive'
+    else 'negative'
+  end as classification
+from public.production_orders po
+left join public.production_order_metrics m on m.id = po.id;
+
+-- remove the functional-test dataset (orders 999xxxx / tasks T9xxx)
+delete from public.warehouse_tasks where production_order like '999%' or warehouse_task like 'T9%';
+delete from public.production_receipts where production_order like '999%';
+delete from public.production_orders where order_number like '999%';

@@ -1,0 +1,416 @@
+// CONVERGE.AI - process-import backend function
+// Validates, deduplicates and upserts COOISPI / Recebimento / MON imports.
+// Writes import history + audit logs, then refreshes order metrics and
+// warehouse-task shift classification on the database side.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
+const FILE_TYPES = ["cooispi", "recebimento", "mon"] as const;
+type FileType = (typeof FILE_TYPES)[number];
+
+interface ImportRow {
+  [key: string]: unknown;
+}
+
+const TABLES: Record<FileType, string> = {
+  cooispi: "production_orders",
+  recebimento: "production_receipts",
+  mon: "warehouse_tasks",
+};
+
+// ---------- parsing helpers ----------
+const normText = (v: unknown): string | null => {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s.length > 0 ? s : null;
+};
+
+const toNumber = (v: unknown): number | null => {
+  if (v === null || v === undefined || String(v).trim() === "") return null;
+  const n = Number(String(v).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+};
+
+const parseDate = (v: unknown): string | null => {
+  if (v === null || v === undefined || String(v).trim() === "") return null;
+  const s = String(v).trim();
+  // dd.mm.yyyy or dd/mm/yyyy, optionally followed by a time part
+  const m = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{2,4})(?:\s.*)?$/);
+  if (m) {
+    let yyyy = m[3];
+    if (yyyy.length === 2) yyyy = (Number(yyyy) > 30 ? "19" : "20") + yyyy;
+    return `${yyyy}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  }
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+};
+
+const parseTime = (v: unknown): string | null => {
+  if (v === null || v === undefined || String(v).trim() === "") return null;
+  const s = String(v).trim();
+  const m = s.match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+  if (m) {
+    const hh = m[1].padStart(2, "0");
+    const mm = m[2].padStart(2, "0");
+    const ss = m[3] ? m[3].padStart(2, "0") : "00";
+    return `${hh}:${mm}:${ss}`;
+  }
+  return null;
+};
+
+const parseTs = (v: unknown): string | null => {
+  if (v === null || v === undefined || String(v).trim() === "") return null;
+  const s = String(v).trim();
+  // dd.mm.yyyy[ hh:mm[:ss]] and dd/mm/yyyy variants
+  const m = s.match(
+    /^(\d{1,2})[./](\d{1,2})[./](\d{2,4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/,
+  );
+  if (m) {
+    let yyyy = m[3];
+    if (yyyy.length === 2) yyyy = (Number(yyyy) > 30 ? "19" : "20") + yyyy;
+    const t = m[4]
+      ? `${m[4].padStart(2, "0")}:${m[5].padStart(2, "0")}:${(m[6] ?? "00").padStart(2, "0")}`
+      : "00:00:00";
+    const d = new Date(`${yyyy}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}T${t}`);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  const d = new Date(s.includes("T") ? s : s.replace(" ", "T"));
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+};
+
+const chunk = <T,>(arr: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+};
+
+// ---------- row validators (return array of error strings) ----------
+const validateCooispi = (r: ImportRow): string[] => {
+  const errors: string[] = [];
+  if (!normText(r.order_number)) errors.push("Ordem é obrigatória");
+  if (!normText(r.material_code)) errors.push("Material é obrigatório");
+  if (toNumber(r.planned_quantity) === null) errors.push("Quantidade da ordem inválida");
+  if (toNumber(r.confirmed_quantity) === null) errors.push("Quantidade boa confirmada inválida");
+  if (toNumber(r.sap_supplied_quantity) === null) errors.push("Qtd. fornecida inválida");
+  const p = toNumber(r.planned_quantity) ?? 0;
+  const c = toNumber(r.confirmed_quantity) ?? 0;
+  const s = toNumber(r.sap_supplied_quantity) ?? 0;
+  if (p < 0) errors.push("Quantidade da ordem negativa");
+  if (c < 0) errors.push("Quantidade boa confirmada negativa");
+  if (s < 0) errors.push("Qtd. fornecida negativa");
+  for (const f of ["actual_start", "actual_end", "planned_start", "created_date"]) {
+    const v = r[f];
+    if (v !== null && v !== undefined && String(v).trim() !== "" && !parseTs(v)) {
+      errors.push(`Data inválida em ${f}`);
+    }
+  }
+  return errors;
+};
+
+const validateRecebimento = (r: ImportRow): string[] => {
+  const errors: string[] = [];
+  if (!normText(r.document_number)) errors.push("Documento é obrigatório");
+  if (!normText(r.production_order)) errors.push("Ordem de produção é obrigatória");
+  if (!normText(r.material_code)) errors.push("Produto é obrigatório");
+  const q = toNumber(r.quantity);
+  if (q === null) errors.push("Quantidade inválida");
+  else if (q <= 0) errors.push("Quantidade deve ser maior que zero");
+  for (const f of ["goods_receipt_date", "storage_date"]) {
+    const v = r[f];
+    if (v !== null && v !== undefined && String(v).trim() !== "" && !parseDate(v)) {
+      errors.push(`Data inválida em ${f}`);
+    }
+  }
+  return errors;
+};
+
+const validateMon = (r: ImportRow): string[] => {
+  const errors: string[] = [];
+  if (!normText(r.warehouse_task)) errors.push("Tarefa de depósito é obrigatória");
+  const q = toNumber(r.quantity);
+  if (q !== null && q < 0) errors.push("Quantidade negativa");
+  if (r.process_type !== "1020" && r.process_type !== "1012") {
+    errors.push("Tipo proc. depósito deve ser 1020 ou 1012");
+  }
+  for (const f of ["goods_receipt_date", "creation_date", "confirmation_date"]) {
+    const v = r[f];
+    if (v !== null && v !== undefined && String(v).trim() !== "" && !parseDate(v)) {
+      errors.push(`Data inválida em ${f}`);
+    }
+  }
+  for (const f of ["creation_time", "confirmation_time"]) {
+    const v = r[f];
+    if (v !== null && v !== undefined && String(v).trim() !== "" && !parseTime(v)) {
+      errors.push(`Hora inválida em ${f}`);
+    }
+  }
+  return errors;
+};
+
+const VALIDATORS: Record<FileType, (r: ImportRow) => string[]> = {
+  cooispi: validateCooispi,
+  recebimento: validateRecebimento,
+  mon: validateMon,
+};
+
+// ---------- payload builders ----------
+const buildCooispi = (r: ImportRow) => ({
+  order_number: normText(r.order_number) ?? "",
+  material_code: normText(r.material_code) ?? "",
+  material_description: normText(r.material_description),
+  planned_quantity: toNumber(r.planned_quantity) ?? 0,
+  confirmed_quantity: toNumber(r.confirmed_quantity) ?? 0,
+  sap_supplied_quantity: toNumber(r.sap_supplied_quantity) ?? 0,
+  unit: normText(r.unit),
+  lot: normText(r.lot),
+  actual_start: parseTs(r.actual_start),
+  actual_end: parseTs(r.actual_end),
+  planned_start: parseTs(r.planned_start),
+  created_date: parseTs(r.created_date),
+});
+
+const buildRecebimento = (r: ImportRow) => {
+  const doc = normText(r.document_number) ?? "";
+  const ord = normText(r.production_order) ?? "";
+  const mat = normText(r.material_code) ?? "";
+  const lot = normText(r.lot) ?? "";
+  const qty = toNumber(r.quantity) ?? 0;
+  const grDate = parseDate(r.goods_receipt_date) ?? "";
+  const dedupKey = [doc, ord, mat, lot, qty, grDate].join("|");
+  return {
+    document_number: doc,
+    production_order: ord,
+    material_code: mat,
+    material_description: normText(r.material_description),
+    quantity: qty,
+    unit: normText(r.unit),
+    lot: normText(r.lot),
+    goods_receipt_status: normText(r.goods_receipt_status),
+    warehouse_entry_status: normText(r.warehouse_entry_status),
+    goods_receipt_date: parseDate(r.goods_receipt_date),
+    goods_receipt_time: parseTime(r.goods_receipt_time),
+    process_type: normText(r.process_type),
+    storage_date: parseDate(r.storage_date),
+    storage_time: parseTime(r.storage_time),
+    is_valid: true,
+    dedup_key: dedupKey,
+  };
+};
+
+const buildMon = (r: ImportRow) => {
+  const task = normText(r.warehouse_task) ?? "";
+  const qty = toNumber(r.quantity) ?? 0;
+  return {
+    warehouse_task: task,
+    document: normText(r.document),
+    production_order: normText(r.production_order),
+    source_uc: normText(r.source_uc),
+    material_code: normText(r.material_code),
+    material_description: normText(r.material_description),
+    lot: normText(r.lot),
+    quantity: qty,
+    unit: normText(r.unit),
+    process_type: normText(r.process_type) ?? "",
+    task_status: normText(r.task_status),
+    goods_receipt_date: parseDate(r.goods_receipt_date),
+    author: normText(r.author),
+    creation_date: parseDate(r.creation_date),
+    creation_time: parseTime(r.creation_time),
+    confirmed_by: normText(r.confirmed_by),
+    confirmation_date: parseDate(r.confirmation_date),
+    confirmation_time: parseTime(r.confirmation_time),
+    dedup_key: task,
+  };
+};
+
+const BUILDERS: Record<FileType, (r: ImportRow) => Record<string, unknown>> = {
+  cooispi: buildCooispi,
+  recebimento: buildRecebimento,
+  mon: buildMon,
+};
+
+const MAX_ERRORS = 1000;
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+  );
+
+  try {
+    const auth = req.headers.get("Authorization") ?? "";
+    const jwt = auth.replace(/^Bearer\s+/i, "").trim();
+    if (!jwt) {
+      return json(corsHeaders, { ok: false, error: "Não autenticado" }, 401);
+    }
+
+    const { data: userData, error: userError } = await supabase.auth.getUser(jwt);
+    if (userError || !userData?.user) {
+      return json(corsHeaders, { ok: false, error: "Sessão inválida" }, 401);
+    }
+    const user = userData.user;
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (profile?.role !== "admin") {
+      return json(corsHeaders, { ok: false, error: "Apenas administradores podem importar" }, 403);
+    }
+
+    const body = await req.json().catch(() => null);
+    if (!body) return json(corsHeaders, { ok: false, error: "Corpo inválido" }, 400);
+    const fileType = body.file_type as FileType;
+    const fileName = typeof body.file_name === "string" ? body.file_name : "importacao.xlsx";
+    const rows: ImportRow[] = Array.isArray(body.rows) ? body.rows : [];
+
+    if (!FILE_TYPES.includes(fileType)) {
+      return json(corsHeaders, { ok: false, error: "Tipo de arquivo inválido" }, 400);
+    }
+    if (rows.length === 0) {
+      return json(corsHeaders, { ok: false, error: "Nenhuma linha para importar" }, 400);
+    }
+
+    // Create import history row
+    const { data: imp, error: impErr } = await supabase
+      .from("imports")
+      .insert({
+        file_name: fileName,
+        file_type: fileType,
+        imported_by: user.id,
+        total_records: rows.length,
+        status: "processing",
+      })
+      .select("id")
+      .single();
+    if (impErr || !imp) {
+      return json(corsHeaders, { ok: false, error: "Falha ao registrar importação" }, 500);
+    }
+    const importId = imp.id;
+
+    const table = TABLES[fileType];
+    const validate = VALIDATORS[fileType];
+    const build = BUILDERS[fileType];
+
+    const errors: { row: number; errors: string[] }[] = [];
+    const validRows: Record<string, unknown>[] = [];
+    const seenKeys = new Set<string>();
+
+    rows.forEach((r, idx) => {
+      const rowErrors = validate(r);
+      if (rowErrors.length > 0) {
+        if (errors.length < MAX_ERRORS) errors.push({ row: idx + 2, errors: rowErrors });
+        return;
+      }
+      const payload = build(r);
+      const key = String(payload.dedup_key ?? payload.order_number ?? "");
+      if (key) {
+        if (seenKeys.has(key)) {
+          if (errors.length < MAX_ERRORS) errors.push({ row: idx + 2, errors: ["Registro duplicado no arquivo"] });
+          return;
+        }
+        seenKeys.add(key);
+      }
+      validRows.push(payload);
+    });
+
+    let inserted = 0;
+    let updated = 0;
+
+    if (validRows.length > 0) {
+      // Fetch existing keys in chunks
+      const keys = validRows.map((r) => String(r.dedup_key ?? r.order_number ?? ""));
+      const existingKeys = new Set<string>();
+      for (const keyChunk of chunk(keys, 500)) {
+        const { data: existing } = await supabase
+          .from(table)
+          .select("dedup_key")
+          .in("dedup_key", keyChunk);
+        (existing ?? []).forEach((e) => existingKeys.add(String(e.dedup_key)));
+      }
+
+      const toInsert = validRows.filter((r) => !existingKeys.has(String(r.dedup_key ?? r.order_number ?? "")));
+      const toUpdate = validRows.filter((r) => existingKeys.has(String(r.dedup_key ?? r.order_number ?? "")));
+
+      if (toInsert.length > 0) {
+        const { error: insErr } = await supabase.from(table).insert(toInsert);
+        if (insErr) throw new Error(`Falha ao inserir: ${insErr.message}`);
+        inserted = toInsert.length;
+      }
+      if (toUpdate.length > 0) {
+        const { error: updErr } = await supabase
+          .from(table)
+          .upsert(toUpdate, { onConflict: "dedup_key" });
+        if (updErr) throw new Error(`Falha ao atualizar: ${updErr.message}`);
+        updated = toUpdate.length;
+      }
+    }
+
+    // Refresh order status/required quantities
+    if (validRows.length > 0) {
+      await supabase.rpc("refresh_order_metrics").catch(() => undefined);
+      if (fileType === "mon") {
+        await supabase.rpc("classify_warehouse_task_shifts").catch(() => undefined);
+      }
+    }
+
+    const rejected = rows.length - inserted - updated;
+
+    const { error: updImpErr } = await supabase
+      .from("imports")
+      .update({
+        status: "completed",
+        inserted_records: inserted,
+        updated_records: updated,
+        rejected_records: rejected,
+        error_log: errors,
+      })
+      .eq("id", importId);
+    if (updImpErr) throw new Error(`Falha ao finalizar importação: ${updImpErr.message}`);
+
+    await supabase.from("audit_logs").insert({
+      user_id: user.id,
+      action: "import",
+      entity: "imports",
+      entity_id: String(importId),
+      new_value: {
+        file_name: fileName,
+        file_type: fileType,
+        total: rows.length,
+        inserted,
+        updated,
+        rejected,
+      },
+    });
+
+    return json(corsHeaders, {
+      ok: true,
+      import_id: importId,
+      total: rows.length,
+      inserted,
+      updated,
+      rejected,
+      errors,
+    });
+  } catch (err) {
+    console.error("process-import failed:", err);
+    return json(corsHeaders, { ok: false, error: err instanceof Error ? err.message : "Erro interno" }, 500);
+  }
+});
+
+function json(headers: Record<string, string>, payload: unknown, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...headers, "Content-Type": "application/json" },
+  });
+}

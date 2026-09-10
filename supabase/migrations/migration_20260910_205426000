@@ -1,0 +1,509 @@
+-- ============================================================
+-- CONVERGE.AI Phase 1 foundation migration (fixed ordering)
+-- ============================================================
+
+-- ---------- Enums ----------
+create type public.user_role as enum ('admin', 'manager', 'operator');
+create type public.order_status as enum ('not_started', 'in_progress', 'completed', 'excess');
+
+-- ---------- Generic updated_at trigger ----------
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+-- ---------- profiles ----------
+create table public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null,
+  name text not null default '',
+  role public.user_role not null default 'operator',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_role public.user_role;
+begin
+  v_role := 'operator';
+  if (select count(*) from public.profiles) = 0 then
+    v_role := 'admin';
+  end if;
+  insert into public.profiles (id, email, name, role)
+  values (new.id, new.email, coalesce(new.raw_user_meta_data->>'name', split_part(coalesce(new.email,'user'),'@',1)), v_role);
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+create trigger profiles_set_updated_at
+  before update on public.profiles
+  for each row execute function public.set_updated_at();
+
+-- ---------- Helper: current user role (security definer, avoids RLS recursion) ----------
+create or replace function public.current_user_role()
+returns public.user_role
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select role from public.profiles where id = auth.uid();
+$$;
+
+alter table public.profiles enable row level security;
+create policy "profiles_admin_all" on public.profiles
+  for all using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create policy "profiles_self_select" on public.profiles
+  for select using (id = auth.uid());
+create policy "profiles_self_update" on public.profiles
+  for update using (id = auth.uid()) with check (id = auth.uid() and public.current_user_role() = role);
+
+-- ---------- operators ----------
+create table public.operators (
+  id bigserial primary key,
+  employee_number text not null unique,
+  name text not null,
+  role text,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create trigger operators_set_updated_at
+  before update on public.operators for each row execute function public.set_updated_at();
+alter table public.operators enable row level security;
+create policy "operators_select" on public.operators for select
+  using (public.current_user_role() in ('admin','manager','operator'));
+create policy "operators_write" on public.operators for all
+  using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create index idx_operators_name on public.operators(name);
+
+-- ---------- shifts ----------
+create table public.shifts (
+  id bigserial primary key,
+  code text not null unique,
+  name text not null,
+  description text,
+  start_time time not null,
+  end_time time not null,
+  crosses_midnight boolean not null default false,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create trigger shifts_set_updated_at
+  before update on public.shifts for each row execute function public.set_updated_at();
+alter table public.shifts enable row level security;
+create policy "shifts_select" on public.shifts for select
+  using (public.current_user_role() in ('admin','manager','operator'));
+create policy "shifts_write" on public.shifts for all
+  using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+
+-- ---------- work_schedules ----------
+create table public.work_schedules (
+  id bigserial primary key,
+  name text not null,
+  description text,
+  shift_id bigint references public.shifts(id),
+  weekday smallint not null,
+  start_time time,
+  end_time time,
+  break_start time,
+  break_end time,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create trigger work_schedules_set_updated_at
+  before update on public.work_schedules for each row execute function public.set_updated_at();
+alter table public.work_schedules enable row level security;
+create policy "work_schedules_select" on public.work_schedules for select
+  using (public.current_user_role() in ('admin','manager','operator'));
+create policy "work_schedules_write" on public.work_schedules for all
+  using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create index idx_work_schedules_shift on public.work_schedules(shift_id);
+
+-- ---------- operator_shift_history ----------
+create table public.operator_shift_history (
+  id bigserial primary key,
+  operator_id bigint references public.operators(id),
+  shift_id bigint references public.shifts(id),
+  start_date date not null,
+  end_date date,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create trigger osh_set_updated_at
+  before update on public.operator_shift_history for each row execute function public.set_updated_at();
+alter table public.operator_shift_history enable row level security;
+create policy "osh_select" on public.operator_shift_history for select
+  using (public.current_user_role() in ('admin','manager','operator'));
+create policy "osh_write" on public.operator_shift_history for all
+  using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create index idx_osh_operator on public.operator_shift_history(operator_id);
+create index idx_osh_shift on public.operator_shift_history(shift_id);
+
+-- ---------- production_orders ----------
+create table public.production_orders (
+  id bigserial primary key,
+  order_number text not null unique,
+  material_code text not null,
+  material_description text,
+  planned_quantity numeric(18,3) not null default 0,
+  confirmed_quantity numeric(18,3) not null default 0,
+  sap_supplied_quantity numeric(18,3) not null default 0,
+  required_pull_quantity numeric(18,3) not null default 0,
+  unit text,
+  lot text,
+  actual_start timestamptz,
+  actual_end timestamptz,
+  planned_start timestamptz,
+  created_date timestamptz,
+  status public.order_status not null default 'not_started',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create trigger production_orders_set_updated_at
+  before update on public.production_orders for each row execute function public.set_updated_at();
+alter table public.production_orders enable row level security;
+create policy "orders_select" on public.production_orders for select
+  using (public.current_user_role() in ('admin','manager','operator'));
+create policy "orders_write" on public.production_orders for all
+  using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create index idx_orders_material on public.production_orders(material_code);
+create index idx_orders_lot on public.production_orders(lot);
+create index idx_orders_created_date on public.production_orders(created_date);
+create index idx_orders_actual_start on public.production_orders(actual_start);
+create index idx_orders_status on public.production_orders(status);
+
+-- ---------- production_receipts ----------
+create table public.production_receipts (
+  id bigserial primary key,
+  document_number text not null,
+  production_order text not null,
+  material_code text not null,
+  material_description text,
+  quantity numeric(18,3) not null default 0,
+  unit text,
+  lot text,
+  goods_receipt_status text,
+  warehouse_entry_status text,
+  goods_receipt_date date,
+  goods_receipt_time time,
+  process_type text,
+  storage_date date,
+  storage_time time,
+  is_valid boolean not null default true,
+  dedup_key text not null unique,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create trigger receipts_set_updated_at
+  before update on public.production_receipts for each row execute function public.set_updated_at();
+alter table public.production_receipts enable row level security;
+create policy "receipts_select" on public.production_receipts for select
+  using (public.current_user_role() in ('admin','manager','operator'));
+create policy "receipts_write" on public.production_receipts for all
+  using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create index idx_receipts_order on public.production_receipts(production_order);
+create index idx_receipts_material on public.production_receipts(material_code);
+create index idx_receipts_lot on public.production_receipts(lot);
+create index idx_receipts_document on public.production_receipts(document_number);
+create index idx_receipts_goods_date on public.production_receipts(goods_receipt_date);
+
+-- ---------- warehouse_tasks ----------
+create table public.warehouse_tasks (
+  id bigserial primary key,
+  warehouse_task text not null,
+  document text,
+  production_order text,
+  source_uc text,
+  material_code text,
+  material_description text,
+  lot text,
+  quantity numeric(18,3) not null default 0,
+  unit text,
+  process_type text not null,
+  task_status text,
+  goods_receipt_date date,
+  author text,
+  creation_date date,
+  creation_time time,
+  confirmed_by text,
+  confirmation_date date,
+  confirmation_time time,
+  pull_operator_id bigint references public.operators(id),
+  storage_operator_id bigint references public.operators(id),
+  pull_shift_id bigint references public.shifts(id),
+  storage_shift_id bigint references public.shifts(id),
+  operational_pull_day date,
+  operational_storage_day date,
+  dedup_key text not null unique,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create trigger warehouse_tasks_set_updated_at
+  before update on public.warehouse_tasks for each row execute function public.set_updated_at();
+alter table public.warehouse_tasks enable row level security;
+create policy "tasks_select" on public.warehouse_tasks for select
+  using (public.current_user_role() in ('admin','manager','operator'));
+create policy "tasks_write" on public.warehouse_tasks for all
+  using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create index idx_tasks_order on public.warehouse_tasks(production_order);
+create index idx_tasks_material on public.warehouse_tasks(material_code);
+create index idx_tasks_uc on public.warehouse_tasks(source_uc);
+create index idx_tasks_document on public.warehouse_tasks(document);
+create index idx_tasks_process on public.warehouse_tasks(process_type);
+create index idx_tasks_creation on public.warehouse_tasks(creation_date);
+create index idx_tasks_confirmation on public.warehouse_tasks(confirmation_date);
+create index idx_tasks_pull_day on public.warehouse_tasks(operational_pull_day);
+create index idx_tasks_storage_day on public.warehouse_tasks(operational_storage_day);
+create index idx_tasks_pull_op on public.warehouse_tasks(pull_operator_id);
+create index idx_tasks_storage_op on public.warehouse_tasks(storage_operator_id);
+create index idx_tasks_status on public.warehouse_tasks(task_status);
+
+-- ---------- imports ----------
+create table public.imports (
+  id bigserial primary key,
+  file_name text not null,
+  file_type text not null,
+  imported_by uuid references auth.users(id),
+  imported_at timestamptz not null default now(),
+  total_records integer not null default 0,
+  inserted_records integer not null default 0,
+  updated_records integer not null default 0,
+  rejected_records integer not null default 0,
+  status text not null default 'processing',
+  error_log jsonb
+);
+alter table public.imports enable row level security;
+create policy "imports_select" on public.imports for select
+  using (public.current_user_role() in ('admin','manager'));
+create policy "imports_write" on public.imports for all
+  using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+create index idx_imports_at on public.imports(imported_at);
+
+-- ---------- system_settings ----------
+create table public.system_settings (
+  id bigserial primary key,
+  key text not null unique,
+  value jsonb not null,
+  description text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create trigger system_settings_set_updated_at
+  before update on public.system_settings for each row execute function public.set_updated_at();
+alter table public.system_settings enable row level security;
+create policy "settings_select" on public.system_settings for select
+  using (public.current_user_role() in ('admin','manager','operator'));
+create policy "settings_write" on public.system_settings for all
+  using (public.current_user_role() = 'admin') with check (public.current_user_role() = 'admin');
+
+insert into public.system_settings (key, value, description) values
+  ('pull_completion_basis', '"confirmed"', 'Base para conclusão da puxada: confirmed | planned | min'),
+  ('storage_sla_minutes', '30', 'SLA de armazenagem em minutos'),
+  ('backlog_ranges', '[{"min":0,"max":30,"label":"0-30 min"},{"min":31,"max":60,"label":"31-60 min"},{"min":61,"max":120,"label":"61-120 min"},{"min":121,"max":null,"label":"> 120 min"}]', 'Faixas de backlog configuraveis');
+
+-- ---------- audit_logs ----------
+create table public.audit_logs (
+  id bigserial primary key,
+  user_id uuid references auth.users(id),
+  action text not null,
+  entity text not null,
+  entity_id text,
+  old_value jsonb,
+  new_value jsonb,
+  created_at timestamptz not null default now()
+);
+alter table public.audit_logs enable row level security;
+create policy "audit_select" on public.audit_logs for select
+  using (public.current_user_role() = 'admin');
+create index idx_audit_entity on public.audit_logs(entity, entity_id);
+create index idx_audit_at on public.audit_logs(created_at);
+
+-- ---------- get_shift_for_datetime ----------
+create or replace function public.get_shift_for_datetime(p_operator_id bigint, p_datetime timestamptz)
+returns table (shift_id bigint, operational_day date)
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+declare
+  v_local_time time;
+  v_shift_id bigint;
+  v_crosses boolean;
+  v_start_time time;
+  v_end_time time;
+begin
+  if p_operator_id is null or p_datetime is null then
+    return query select null::bigint, null::date;
+    return;
+  end if;
+
+  select osh.shift_id into v_shift_id
+  from public.operator_shift_history osh
+  where osh.operator_id = p_operator_id
+    and osh.active
+    and osh.start_date <= p_datetime::date
+    and (osh.end_date is null or osh.end_date >= p_datetime::date)
+  order by osh.start_date desc, osh.id desc
+  limit 1;
+
+  if v_shift_id is null then
+    return query select null::bigint, null::date;
+    return;
+  end if;
+
+  select s.crosses_midnight, s.start_time, s.end_time
+    into v_crosses, v_start_time, v_end_time
+  from public.shifts s
+  where s.id = v_shift_id and s.active;
+
+  if v_crosses is null then
+    return query select null::bigint, null::date;
+    return;
+  end if;
+
+  v_local_time := p_datetime::time;
+
+  if v_crosses then
+    if not (v_local_time >= v_start_time or v_local_time < v_end_time) then
+      return query select null::bigint, null::date;
+      return;
+    end if;
+  else
+    if not (v_local_time >= v_start_time and v_local_time < v_end_time) then
+      return query select null::bigint, null::date;
+      return;
+    end if;
+  end if;
+
+  if v_crosses and v_local_time < v_end_time then
+    return query select v_shift_id, (p_datetime::date - 1);
+  else
+    return query select v_shift_id, p_datetime::date;
+  end if;
+end;
+$$;
+
+-- ---------- production_order_metrics view ----------
+create view public.production_order_metrics as
+with basis as (
+  select coalesce((select value from public.system_settings where key = 'pull_completion_basis')::text, 'confirmed') as pull_basis
+),
+order_base as (
+  select
+    po.id,
+    po.order_number,
+    po.material_code,
+    po.material_description,
+    po.unit,
+    po.lot,
+    po.planned_quantity,
+    po.confirmed_quantity,
+    po.sap_supplied_quantity,
+    po.actual_start,
+    po.actual_end,
+    po.planned_start,
+    po.created_date,
+    case
+      when b.pull_basis = 'planned' then po.planned_quantity
+      when b.pull_basis = 'min' then least(coalesce(po.planned_quantity,0), coalesce(po.confirmed_quantity,0))
+      else coalesce(nullif(coalesce(po.confirmed_quantity,0),0), po.planned_quantity)
+    end as required_quantity
+  from public.production_orders po
+  cross join basis b
+),
+pulled as (
+  select
+    production_order,
+    coalesce(sum(quantity),0) as pulled_quantity,
+    count(*) as receipt_count
+  from public.production_receipts
+  where is_valid
+  group by production_order
+)
+select
+  ob.id,
+  ob.order_number,
+  ob.material_code,
+  ob.material_description,
+  ob.unit,
+  ob.lot,
+  ob.planned_quantity,
+  ob.confirmed_quantity,
+  ob.sap_supplied_quantity,
+  ob.required_quantity,
+  coalesce(p.pulled_quantity,0) as pulled_quantity,
+  greatest(coalesce(ob.required_quantity,0) - coalesce(p.pulled_quantity,0), 0) as balance_quantity,
+  greatest(coalesce(p.pulled_quantity,0) - coalesce(ob.required_quantity,0), 0) as excess_quantity,
+  case
+    when coalesce(ob.required_quantity,0) > 0
+    then least(100, round(coalesce(p.pulled_quantity,0) / ob.required_quantity * 100, 2))
+    else 0
+  end as pull_efficiency_percent,
+  case
+    when coalesce(p.pulled_quantity,0) = 0 then 'not_started'
+    when abs(coalesce(p.pulled_quantity,0) - coalesce(ob.required_quantity,0)) <= 0.001 then 'completed'
+    when coalesce(p.pulled_quantity,0) < coalesce(ob.required_quantity,0) then 'in_progress'
+    else 'excess'
+  end::public.order_status as status,
+  ob.actual_start,
+  ob.actual_end,
+  ob.planned_start,
+  ob.created_date
+from order_base ob
+left join pulled p on p.production_order = ob.order_number;
+
+-- ---------- sap_reconciliation view ----------
+create view public.sap_reconciliation as
+select
+  po.id,
+  po.order_number,
+  po.material_code,
+  po.material_description,
+  po.lot,
+  po.unit,
+  po.sap_supplied_quantity as sap_quantity,
+  m.pulled_quantity as physical_quantity,
+  round(coalesce(po.sap_supplied_quantity,0) - coalesce(m.pulled_quantity,0), 3) as difference_quantity,
+  case
+    when abs(coalesce(po.sap_supplied_quantity,0) - coalesce(m.pulled_quantity,0)) <= 0.001 then 'ok'
+    when coalesce(m.pulled_quantity,0) > coalesce(po.sap_supplied_quantity,0) then 'positive'
+    else 'negative'
+  end as classification
+from public.production_orders po
+left join public.production_order_metrics m on m.id = po.id;
+
+-- ---------- refresh_order_metrics: recompute status after imports ----------
+create or replace function public.refresh_order_metrics()
+returns void
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  update public.production_orders po
+  set required_pull_quantity = m.required_quantity,
+      status = m.status,
+      updated_at = now()
+  from public.production_order_metrics m
+  where m.id = po.id;
+$$;
