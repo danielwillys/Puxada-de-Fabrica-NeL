@@ -13,16 +13,23 @@ export function fmtPercent(n: number | null | undefined): string {
   return `${n.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 }
 
+/** Date-only strings must be read as local time, otherwise they shift a day. */
+function toDate(value: string): Date {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T00:00:00`)
+    : new Date(value);
+}
+
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—";
-  const d = new Date(iso);
+  const d = toDate(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("pt-BR");
 }
 
 export function fmtDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
-  const d = new Date(iso);
+  const d = toDate(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString("pt-BR", {
     day: "2-digit",

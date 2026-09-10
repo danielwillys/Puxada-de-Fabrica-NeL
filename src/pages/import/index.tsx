@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   CheckCircle2,
   FileSpreadsheet,
@@ -31,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  COLUMN_MAPS,
   REQUIRED_HEADERS,
   normalizeRows,
   type ImportResult,
@@ -63,6 +64,13 @@ export function ImportPage() {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+
+  // Values already normalized (dates/times converted), shown in the preview so
+  // the user can confirm the interpretation before importing.
+  const normalized = useMemo(
+    () => (type ? normalizeRows(parsed, type) : []),
+    [parsed, type],
+  );
 
   if (profile?.role !== "admin") {
     return (
@@ -286,15 +294,24 @@ export function ImportPage() {
                   <TableBody>
                     {parsed.slice(0, 6).map((r, i) => (
                       <TableRow key={i}>
-                        {headers.slice(0, 8).map((h) => (
-                          <TableCell key={h} className="whitespace-nowrap text-xs">
-                            {String(r[h] ?? "")}
-                          </TableCell>
-                        ))}
+                        {headers.slice(0, 8).map((h) => {
+                          const field = type ? COLUMN_MAPS[type][h] : undefined;
+                          const value = field ? normalized[i]?.[field] : r[h];
+                          return (
+                            <TableCell key={h} className="whitespace-nowrap text-xs">
+                              {value === null || value === undefined || value === ""
+                                ? "—"
+                                : String(value)}
+                            </TableCell>
+                          );
+                        })}
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
+                <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+                  Prévia com datas e horas já convertidas para AAAA-MM-DD e HH:MM:SS.
+                </p>
               </div>
             ) : null}
           </div>

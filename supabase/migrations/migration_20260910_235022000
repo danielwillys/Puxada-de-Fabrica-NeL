@@ -1,0 +1,7 @@
+-- Remove the rows imported with corrupted dates/times (12h + MM/DD misread)
+-- so the corrected import can run cleanly without duplicates.
+delete from public.warehouse_tasks;
+delete from public.production_receipts;
+delete from public.production_orders;
+-- reset stored order metrics
+update public.production_orders set status = 'not_started', required_pull_quantity = 0;

@@ -74,14 +74,17 @@ const parseDate = (v: unknown): string | null => {
 const parseTime = (v: unknown): string | null => {
   if (v === null || v === undefined || String(v).trim() === "") return null;
   const s = String(v).trim();
-  const m = s.match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
-  if (m) {
-    const hh = m[1].padStart(2, "0");
-    const mm = m[2].padStart(2, "0");
-    const ss = m[3] ? m[3].padStart(2, "0") : "00";
-    return `${hh}:${mm}:${ss}`;
-  }
-  return null;
+  // Accepts 24h ("19:07:24") and 12h with AM/PM ("7:07:24 PM")
+  const m = s.match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*([AaPp][Mm])?/);
+  if (!m) return null;
+  let hh = Number(m[1]);
+  const mm = m[2];
+  const ss = m[3] ?? "00";
+  const meridiem = m[4]?.toUpperCase();
+  if (meridiem === "PM" && hh < 12) hh += 12;
+  if (meridiem === "AM" && hh === 12) hh = 0;
+  if (hh > 23 || Number(mm) > 59 || Number(ss) > 59) return null;
+  return `${String(hh).padStart(2, "0")}:${mm.padStart(2, "0")}:${ss.padStart(2, "0")}`;
 };
 
 const parseTs = (v: unknown): string | null => {
@@ -209,8 +212,9 @@ const buildRecebimento = (r: ImportRow) => {
   const mat = normText(r.material_code) ?? "";
   const lot = normText(r.lot) ?? "";
   const qty = toNumber(r.quantity) ?? 0;
-  const grDate = parseDate(r.goods_receipt_date) ?? "";
-  const dedupKey = [doc, ord, mat, lot, qty, grDate].join("|");
+  // The date is intentionally excluded from the key: a corrected date must
+  // update the same receipt instead of creating a duplicate row.
+  const dedupKey = [doc, ord, mat, lot, qty].join("|");
   return {
     document_number: doc,
     production_order: ord,
