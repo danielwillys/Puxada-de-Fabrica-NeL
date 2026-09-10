@@ -52,12 +52,20 @@ const toNumber = (v: unknown): number | null => {
 const parseDate = (v: unknown): string | null => {
   if (v === null || v === undefined || String(v).trim() === "") return null;
   const s = String(v).trim();
-  // dd.mm.yyyy or dd/mm/yyyy, optionally followed by a time part
+  // dd.mm.yyyy, dd/mm/yyyy or US mm/dd/yyyy, optionally followed by a time part
   const m = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{2,4})(?:\s.*)?$/);
   if (m) {
+    let day = Number(m[1]);
+    let mon = Number(m[2]);
+    if (day <= 12 && mon > 12) {
+      // mm/dd/yyyy (US): first token is the month, second is the day
+      const tmp = day;
+      day = mon;
+      mon = tmp;
+    }
     let yyyy = m[3];
     if (yyyy.length === 2) yyyy = (Number(yyyy) > 30 ? "19" : "20") + yyyy;
-    return `${yyyy}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    return `${yyyy}-${String(mon).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   }
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
@@ -84,12 +92,20 @@ const parseTs = (v: unknown): string | null => {
     /^(\d{1,2})[./](\d{1,2})[./](\d{2,4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/,
   );
   if (m) {
+    let day = Number(m[1]);
+    let mon = Number(m[2]);
+    if (day <= 12 && mon > 12) {
+      // mm/dd/yyyy (US)
+      const tmp = day;
+      day = mon;
+      mon = tmp;
+    }
     let yyyy = m[3];
     if (yyyy.length === 2) yyyy = (Number(yyyy) > 30 ? "19" : "20") + yyyy;
     const t = m[4]
       ? `${m[4].padStart(2, "0")}:${m[5].padStart(2, "0")}:${(m[6] ?? "00").padStart(2, "0")}`
       : "00:00:00";
-    const d = new Date(`${yyyy}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}T${t}`);
+    const d = new Date(`${yyyy}-${String(mon).padStart(2, "0")}-${String(day).padStart(2, "0")}T${t}`);
     return Number.isNaN(d.getTime()) ? null : d.toISOString();
   }
   const d = new Date(s.includes("T") ? s : s.replace(" ", "T"));
@@ -377,11 +393,19 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Refresh order status/required quantities
+    // Refresh order status/required quantities (best effort)
     if (validRows.length > 0) {
-      await supabase.rpc("refresh_order_metrics").catch(() => undefined);
+      try {
+        await supabase.rpc("refresh_order_metrics");
+      } catch {
+        // refresh is best-effort; the import result stays valid
+      }
       if (fileType === "mon") {
-        await supabase.rpc("classify_warehouse_task_shifts").catch(() => undefined);
+        try {
+          await supabase.rpc("classify_warehouse_task_shifts");
+        } catch {
+          // classification can be reprocessed later by an administrator
+        }
       }
     }
 
