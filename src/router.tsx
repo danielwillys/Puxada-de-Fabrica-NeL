@@ -8,6 +8,7 @@ import { OrderDetail } from "@/pages/orders/detail";
 import { ImportPage } from "@/pages/import";
 import { SettingsPage } from "@/pages/settings";
 import { AuditPage } from "@/pages/audit";
+import { RouteError } from "@/pages/route-error";
 import NotFound from "./pages/NotFound";
 
 export const routers = [
@@ -15,15 +16,18 @@ export const routers = [
     path: "/login",
     name: "login",
     element: <LoginPage />,
+    errorElement: <RouteError />,
   },
   {
     path: "/signup",
     name: "signup",
     element: <SignupPage />,
+    errorElement: <RouteError />,
   },
   {
     path: "/",
     element: <AppLayout />,
+    errorElement: <RouteError />,
     children: [
       {
         index: true,
