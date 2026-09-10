@@ -23,6 +23,14 @@ const TABLES: Record<FileType, string> = {
   mon: "warehouse_tasks",
 };
 
+// The natural key used for dedup/upsert differs per table:
+// production_orders is keyed by order_number; the others carry a dedup_key.
+const KEY_COLUMN: Record<FileType, string> = {
+  cooispi: "order_number",
+  recebimento: "dedup_key",
+  mon: "dedup_key",
+};
+
 // ---------- parsing helpers ----------
 const normText = (v: unknown): string | null => {
   if (v === null || v === undefined) return null;
@@ -32,7 +40,12 @@ const normText = (v: unknown): string | null => {
 
 const toNumber = (v: unknown): number | null => {
   if (v === null || v === undefined || String(v).trim() === "") return null;
-  const n = Number(String(v).replace(",", "."));
+  let s = String(v).trim();
+  if (s.includes(",")) {
+    // comma is the decimal separator -> dots are thousands separators
+    s = s.replace(/\./g, "").replace(",", ".");
+  }
+  const n = Number(s);
   return Number.isFinite(n) ? n : null;
 };
 
@@ -328,31 +341,39 @@ Deno.serve(async (req) => {
     let updated = 0;
 
     if (validRows.length > 0) {
-      // Fetch existing keys in chunks
-      const keys = validRows.map((r) => String(r.dedup_key ?? r.order_number ?? ""));
+      const keyCol = KEY_COLUMN[fileType];
+      const keyOf = (r: Record<string, unknown>) =>
+        String(r[keyCol] ?? r.dedup_key ?? r.order_number ?? "");
+      const keys = validRows.map(keyOf);
       const existingKeys = new Set<string>();
       for (const keyChunk of chunk(keys, 500)) {
         const { data: existing } = await supabase
           .from(table)
-          .select("dedup_key")
-          .in("dedup_key", keyChunk);
-        (existing ?? []).forEach((e) => existingKeys.add(String(e.dedup_key)));
+          .select(keyCol)
+          .in(keyCol, keyChunk);
+        (existing ?? []).forEach((e) =>
+          existingKeys.add(String((e as Record<string, unknown>)[keyCol])),
+        );
       }
 
-      const toInsert = validRows.filter((r) => !existingKeys.has(String(r.dedup_key ?? r.order_number ?? "")));
-      const toUpdate = validRows.filter((r) => existingKeys.has(String(r.dedup_key ?? r.order_number ?? "")));
+      const toInsert = validRows.filter((r) => !existingKeys.has(keyOf(r)));
+      const toUpdate = validRows.filter((r) => existingKeys.has(keyOf(r)));
 
       if (toInsert.length > 0) {
-        const { error: insErr } = await supabase.from(table).insert(toInsert);
-        if (insErr) throw new Error(`Falha ao inserir: ${insErr.message}`);
-        inserted = toInsert.length;
+        for (const batch of chunk(toInsert, 500)) {
+          const { error: insErr } = await supabase.from(table).insert(batch);
+          if (insErr) throw new Error(`Falha ao inserir: ${insErr.message}`);
+          inserted += batch.length;
+        }
       }
       if (toUpdate.length > 0) {
-        const { error: updErr } = await supabase
-          .from(table)
-          .upsert(toUpdate, { onConflict: "dedup_key" });
-        if (updErr) throw new Error(`Falha ao atualizar: ${updErr.message}`);
-        updated = toUpdate.length;
+        for (const batch of chunk(toUpdate, 500)) {
+          const { error: updErr } = await supabase
+            .from(table)
+            .upsert(batch, { onConflict: keyCol });
+          if (updErr) throw new Error(`Falha ao atualizar: ${updErr.message}`);
+          updated += batch.length;
+        }
       }
     }
 

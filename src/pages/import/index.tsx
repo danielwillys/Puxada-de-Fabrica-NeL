@@ -114,7 +114,17 @@ export function ImportPage() {
         body: payload,
       });
       if (error) {
-        setResult({ ok: false, error: error.message });
+        let msg = error.message;
+        const ctx = (error as { context?: Response }).context;
+        if (ctx) {
+          try {
+            const body = (await ctx.json()) as { error?: string };
+            if (body?.error) msg = body.error;
+          } catch {
+            // keep the default message
+          }
+        }
+        setResult({ ok: false, error: msg });
       } else {
         setResult((data as ImportResult) ?? { ok: false, error: "Resposta vazia" });
         imports.refetch();
