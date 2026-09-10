@@ -1,0 +1,52 @@
+-- classify MON warehouse task shifts/operational days (backend-side)
+create or replace function public.classify_warehouse_task_shifts()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  r record;
+  v_shift bigint;
+  v_day date;
+begin
+  for r in
+    select
+      t.id,
+      t.author,
+      t.confirmed_by,
+      t.process_type,
+      case when t.creation_date is not null and t.creation_time is not null
+           then (t.creation_date + t.creation_time)::timestamp end as pull_ts,
+      case when t.confirmation_date is not null and t.confirmation_time is not null
+           then (t.confirmation_date + t.confirmation_time)::timestamp end as storage_ts,
+      o.id as author_operator,
+      o2.id as confirmed_operator
+    from public.warehouse_tasks t
+    left join public.operators o
+      on (o.name = trim(coalesce(t.author,'')) or o.employee_number = trim(coalesce(t.author,'')))
+    left join public.operators o2
+      on (o2.name = trim(coalesce(t.confirmed_by,'')) or o2.employee_number = trim(coalesce(t.confirmed_by,'')))
+    where t.pull_operator_id is null or t.storage_operator_id is null
+  loop
+    if r.process_type = '1020' and r.pull_ts is not null and r.author_operator is not null then
+      select g.shift_id, g.operational_day into v_shift, v_day
+      from public.get_shift_for_datetime(r.author_operator, r.pull_ts) g;
+      update public.warehouse_tasks
+      set pull_operator_id = r.author_operator,
+          pull_shift_id = v_shift,
+          operational_pull_day = v_day
+      where id = r.id;
+    end if;
+    if r.process_type = '1012' and r.storage_ts is not null and r.confirmed_operator is not null then
+      select g.shift_id, g.operational_day into v_shift, v_day
+      from public.get_shift_for_datetime(r.confirmed_operator, r.storage_ts) g;
+      update public.warehouse_tasks
+      set storage_operator_id = r.confirmed_operator,
+          storage_shift_id = v_shift,
+          operational_storage_day = v_day
+      where id = r.id;
+    end if;
+  end loop;
+end;
+$$;

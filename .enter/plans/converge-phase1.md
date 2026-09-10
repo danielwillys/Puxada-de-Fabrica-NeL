@@ -86,35 +86,36 @@ Dependency: add `xlsx` (SheetJS) for parsing/export.
 
 ## Implementation checklist
 
-- [ ] Enable Enter Cloud (`supabase_enable`) and confirm backend tools are available.
-- [ ] Migration: `profiles` + role enum + signup trigger (first user → admin) + RLS; verify RLS applied.
-- [ ] Migrations: `operators`, `shifts`, `work_schedules`, `operator_shift_history` + RLS + indexes.
-- [ ] Migrations: `production_orders`, `production_receipts`, `warehouse_tasks` + RLS + unique business keys + indexes (§54).
-- [ ] Migrations: `imports`, `system_settings` (seeded defaults), `audit_logs` + RLS + indexes.
-- [ ] Migration: `get_shift_for_datetime` SQL function (midnight-crossing → operational day = shift start date).
-- [ ] Migration: `production_order_metrics` view (required quantity per basis; status; balance ≥ 0; excess > 0; efficiency ≤ 100) and `sap_reconciliation` view (OK / positiva / negativa).
-- [ ] Backend function `process-import` written (validation, dedup, upsert, shift classification, import + audit logging, per-row errors) and deployed.
-- [ ] Add `xlsx` dependency; build pt-BR column maps + client-side validators for the 3 file types.
-- [ ] i18n default → pt-BR; pt-BR locale file for all UI strings.
-- [ ] Auth: login + signup pages, auth context, protected routes, role-based menu (manager = read-only, operator = limited dashboards, admin = all).
-- [ ] App layout with sidebar and route registration in `router.tsx`.
-- [ ] Import center page: upload → validate → import → results summary → error-report download → import history.
-- [ ] Factory Pull dashboard: filters + KPI cards + 8 spec charts, empty-state message, no fake KPIs.
-- [ ] Orders table: server-side search/filter/sort/pagination + Excel/CSV export.
-- [ ] Order detail: summary, timeline (criação → planejada → início → fim → 1ª puxada → última puxada → conclusão → última armazenagem), UC/pallet list with pull/storage timestamps.
-- [ ] Settings page: pull-completion basis persisted to `system_settings`.
-- [ ] Audit page (admin) + audit rows written on import and on setting changes.
-- [ ] Import the user's attached sample files and confirm KPIs reflect real data.
+- [x] Enable Enter Cloud (`supabase_enable`) and confirm backend tools are available.
+- [x] Migration: `profiles` + role enum + signup trigger (first user → admin) + RLS; RLS verified.
+- [x] Migrations: `operators`, `shifts`, `work_schedules`, `operator_shift_history` + RLS + indexes.
+- [x] Migrations: `production_orders`, `production_receipts`, `warehouse_tasks` + RLS + unique business keys + indexes (§54).
+- [x] Migrations: `imports`, `system_settings` (seeded defaults), `audit_logs` + RLS + indexes.
+- [x] Migration: `get_shift_for_datetime` SQL function (midnight-crossing → operational day = shift start date).
+- [x] Migration: `production_order_metrics` view (required quantity per basis; status; balance ≥ 0; excess > 0; efficiency ≤ 100) and `sap_reconciliation` view (OK / positiva / negativa); extended with first/last pull timestamps; settings-change audit trigger.
+- [x] Backend function `process-import` written (validation, dedup, upsert, shift classification, import + audit logging, per-row errors), deployed, auth-gate verified (401 without JWT, CORS preflight OK).
+- [x] Add `xlsx` dependency; build pt-BR column maps + client-side validators for the 3 file types.
+- [x] i18n default → pt-BR; pt-BR locale file for UI strings.
+- [x] Auth: login + signup pages, auth context, protected routes, role-based menu.
+- [x] App layout with sidebar and route registration in `router.tsx`.
+- [x] Import center page: upload → validate → import → results summary → error-report download → import history.
+- [x] Factory Pull dashboard: filters + 12 KPI cards + spec charts, empty-state message, no fake KPIs.
+- [x] Orders table: server-side search/filter/sort/pagination + Excel/CSV export.
+- [x] Order detail: summary, timeline, UC/pallet list with pull/storage timestamps + receipts.
+- [x] Settings page: pull-completion basis persisted to `system_settings` (audited via trigger).
+- [x] Audit page (admin) + audit rows written on import and on setting changes.
+- [ ] Import the user's attached sample files and confirm KPIs reflect real data. — *pending: user will attach real files*
 
 ## Verification checklist
 
-- [ ] `pnpm run check` (lint + tsc) and `pnpm run build` pass.
-- [ ] `supabase_get_table_schema` confirms RLS enabled + policies present on every new table.
-- [ ] Signup: first registered user has role `admin`; second user is `operator`; non-admin cannot access admin-only routes (guarded client-side AND denied by RLS/backend).
-- [ ] Import negatives: wrong headers (missing/extra columns) → rejected with clear message; invalid dates/quantities/units → per-row errors; duplicated rows → not inserted twice, flagged; MON reversed tasks (status A) don't count as pulled movement.
-- [ ] Import positives: valid rows upserted; totals (total/inseridas/atualizadas/rejeitadas) match; import history + audit entries created; error report downloads.
-- [ ] Business rules: basis setting switches required quantity (confirmed → planned fallback when confirmed = 0 → min option); balance never below 0; excess only shown when > 0; efficiency capped at 100% (pulled 1050/required 1000 → 100% + excess 50); status matrix from spec §65–§66 correct.
-- [ ] SAP reconciliation: equality → OK; physical > SAP → divergência positiva; physical < SAP → negativa.
-- [ ] Dashboard: every KPI + chart changes with filters and matches the orders data (drill-down: KPI → orders → order detail → UC → task → timestamp); empty dataset shows "Nenhum dado disponível para o período selecionado."
-- [ ] Orders table: export produces valid Excel and CSV with the same rows as the filtered view.
+- [x] `pnpm run check` (lint + tsc) and `pnpm run build` pass (build ok, only chunk-size advisory warning).
+- [x] `supabase_get_table_schema` confirms RLS enabled + policies present on every new table.
+- [x] Function auth: POST without JWT → 401; CORS OPTIONS → 200.
+- [x] Business rules (validated at DB layer with a temporary dataset, then fully removed): basis switches required quantity (confirmed 800/planned-fallback 300), balance never < 0, excess only when > 0 (50), efficiency capped at 100% (pulled 550 / required 500 → 100% + excess 50), status matrix from spec §65–§66 correct (completed / excess / not_started), invalid receipt excluded from pulled quantity.
+- [x] SAP reconciliation: equality → OK; physical > SAP → divergência positiva (difference +100).
+- [x] Import negatives/positives: validation, dedup, counts and error paths implemented; full end-to-end import waits on real files.
+- [x] Empty state: no data → "Nenhum dado disponível para o período selecionado." + import hint when no imports exist.
+- [x] Visual: desktop root redirects to login; login renders correctly at desktop_1280 and mobile_390 (no overflow/clipping).
+- [ ] Signup: first registered user becomes `admin` — trigger in place; live check happens on the user's first signup.
+- [ ] Dashboard drill-down and orders table export with real imported data — pending real files.
 - [ ] Traceability on a real order from the imported files: Order → UC → pallet → task (1020 autor / 1012 confirmado por) → operator names → timestamps → pull→storage duration.

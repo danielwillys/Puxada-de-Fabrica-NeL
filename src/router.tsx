@@ -1,11 +1,65 @@
-import Index from "./pages/Index";
+import { Navigate } from "react-router-dom";
+import { AppLayout } from "@/components/layout/app-layout";
+import { LoginPage } from "@/pages/auth/login";
+import { SignupPage } from "@/pages/auth/signup";
+import { FactoryPullDashboard } from "@/pages/dashboard/factory-pull";
+import { OrdersPage } from "@/pages/orders";
+import { OrderDetail } from "@/pages/orders/detail";
+import { ImportPage } from "@/pages/import";
+import { SettingsPage } from "@/pages/settings";
+import { AuditPage } from "@/pages/audit";
 import NotFound from "./pages/NotFound";
 
 export const routers = [
   {
+    path: "/login",
+    name: "login",
+    element: <LoginPage />,
+  },
+  {
+    path: "/signup",
+    name: "signup",
+    element: <SignupPage />,
+  },
+  {
     path: "/",
-    name: "home",
-    element: <Index />,
+    element: <AppLayout />,
+    children: [
+      {
+        index: true,
+        element: <Navigate to="/dashboard" replace />,
+      },
+      {
+        path: "dashboard",
+        name: "dashboard",
+        element: <FactoryPullDashboard />,
+      },
+      {
+        path: "ordens",
+        name: "ordens",
+        element: <OrdersPage />,
+      },
+      {
+        path: "ordens/:orderNumber",
+        name: "ordem",
+        element: <OrderDetail />,
+      },
+      {
+        path: "importacao",
+        name: "importacao",
+        element: <ImportPage />,
+      },
+      {
+        path: "configuracoes",
+        name: "configuracoes",
+        element: <SettingsPage />,
+      },
+      {
+        path: "auditoria",
+        name: "auditoria",
+        element: <AuditPage />,
+      },
+    ],
   },
   /* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */
   {

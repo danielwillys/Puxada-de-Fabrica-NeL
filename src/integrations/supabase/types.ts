@@ -3360,16 +3360,614 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          entity: string
+          entity_id: string | null
+          id: number
+          new_value: Json | null
+          old_value: Json | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          entity: string
+          entity_id?: string | null
+          id?: number
+          new_value?: Json | null
+          old_value?: Json | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          entity?: string
+          entity_id?: string | null
+          id?: number
+          new_value?: Json | null
+          old_value?: Json | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      imports: {
+        Row: {
+          error_log: Json | null
+          file_name: string
+          file_type: string
+          id: number
+          imported_at: string
+          imported_by: string | null
+          inserted_records: number
+          rejected_records: number
+          status: string
+          total_records: number
+          updated_records: number
+        }
+        Insert: {
+          error_log?: Json | null
+          file_name: string
+          file_type: string
+          id?: number
+          imported_at?: string
+          imported_by?: string | null
+          inserted_records?: number
+          rejected_records?: number
+          status?: string
+          total_records?: number
+          updated_records?: number
+        }
+        Update: {
+          error_log?: Json | null
+          file_name?: string
+          file_type?: string
+          id?: number
+          imported_at?: string
+          imported_by?: string | null
+          inserted_records?: number
+          rejected_records?: number
+          status?: string
+          total_records?: number
+          updated_records?: number
+        }
+        Relationships: []
+      }
+      operator_shift_history: {
+        Row: {
+          active: boolean
+          created_at: string
+          end_date: string | null
+          id: number
+          operator_id: number | null
+          shift_id: number | null
+          start_date: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          end_date?: string | null
+          id?: number
+          operator_id?: number | null
+          shift_id?: number | null
+          start_date: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          end_date?: string | null
+          id?: number
+          operator_id?: number | null
+          shift_id?: number | null
+          start_date?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operator_shift_history_operator_id_fkey"
+            columns: ["operator_id"]
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operator_shift_history_shift_id_fkey"
+            columns: ["shift_id"]
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operators: {
+        Row: {
+          active: boolean
+          created_at: string
+          employee_number: string
+          id: number
+          name: string
+          role: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          employee_number: string
+          id?: number
+          name: string
+          role?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          employee_number?: string
+          id?: number
+          name?: string
+          role?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      production_orders: {
+        Row: {
+          actual_end: string | null
+          actual_start: string | null
+          confirmed_quantity: number
+          created_at: string
+          created_date: string | null
+          id: number
+          lot: string | null
+          material_code: string
+          material_description: string | null
+          order_number: string
+          planned_quantity: number
+          planned_start: string | null
+          required_pull_quantity: number
+          sap_supplied_quantity: number
+          status: Database["public"]["Enums"]["order_status"]
+          unit: string | null
+          updated_at: string
+        }
+        Insert: {
+          actual_end?: string | null
+          actual_start?: string | null
+          confirmed_quantity?: number
+          created_at?: string
+          created_date?: string | null
+          id?: number
+          lot?: string | null
+          material_code: string
+          material_description?: string | null
+          order_number: string
+          planned_quantity?: number
+          planned_start?: string | null
+          required_pull_quantity?: number
+          sap_supplied_quantity?: number
+          status?: Database["public"]["Enums"]["order_status"]
+          unit?: string | null
+          updated_at?: string
+        }
+        Update: {
+          actual_end?: string | null
+          actual_start?: string | null
+          confirmed_quantity?: number
+          created_at?: string
+          created_date?: string | null
+          id?: number
+          lot?: string | null
+          material_code?: string
+          material_description?: string | null
+          order_number?: string
+          planned_quantity?: number
+          planned_start?: string | null
+          required_pull_quantity?: number
+          sap_supplied_quantity?: number
+          status?: Database["public"]["Enums"]["order_status"]
+          unit?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      production_receipts: {
+        Row: {
+          created_at: string
+          dedup_key: string
+          document_number: string
+          goods_receipt_date: string | null
+          goods_receipt_status: string | null
+          goods_receipt_time: string | null
+          id: number
+          is_valid: boolean
+          lot: string | null
+          material_code: string
+          material_description: string | null
+          process_type: string | null
+          production_order: string
+          quantity: number
+          storage_date: string | null
+          storage_time: string | null
+          unit: string | null
+          updated_at: string
+          warehouse_entry_status: string | null
+        }
+        Insert: {
+          created_at?: string
+          dedup_key: string
+          document_number: string
+          goods_receipt_date?: string | null
+          goods_receipt_status?: string | null
+          goods_receipt_time?: string | null
+          id?: number
+          is_valid?: boolean
+          lot?: string | null
+          material_code: string
+          material_description?: string | null
+          process_type?: string | null
+          production_order: string
+          quantity?: number
+          storage_date?: string | null
+          storage_time?: string | null
+          unit?: string | null
+          updated_at?: string
+          warehouse_entry_status?: string | null
+        }
+        Update: {
+          created_at?: string
+          dedup_key?: string
+          document_number?: string
+          goods_receipt_date?: string | null
+          goods_receipt_status?: string | null
+          goods_receipt_time?: string | null
+          id?: number
+          is_valid?: boolean
+          lot?: string | null
+          material_code?: string
+          material_description?: string | null
+          process_type?: string | null
+          production_order?: string
+          quantity?: number
+          storage_date?: string | null
+          storage_time?: string | null
+          unit?: string | null
+          updated_at?: string
+          warehouse_entry_status?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          name: string
+          role: Database["public"]["Enums"]["user_role"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id: string
+          name?: string
+          role?: Database["public"]["Enums"]["user_role"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          role?: Database["public"]["Enums"]["user_role"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      shifts: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          crosses_midnight: boolean
+          description: string | null
+          end_time: string
+          id: number
+          name: string
+          start_time: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          crosses_midnight?: boolean
+          description?: string | null
+          end_time: string
+          id?: number
+          name: string
+          start_time: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          crosses_midnight?: boolean
+          description?: string | null
+          end_time?: string
+          id?: number
+          name?: string
+          start_time?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      system_settings: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: number
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: number
+          key: string
+          updated_at?: string
+          value: Json
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: number
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
+      warehouse_tasks: {
+        Row: {
+          author: string | null
+          confirmation_date: string | null
+          confirmation_time: string | null
+          confirmed_by: string | null
+          created_at: string
+          creation_date: string | null
+          creation_time: string | null
+          dedup_key: string
+          document: string | null
+          goods_receipt_date: string | null
+          id: number
+          lot: string | null
+          material_code: string | null
+          material_description: string | null
+          operational_pull_day: string | null
+          operational_storage_day: string | null
+          process_type: string
+          production_order: string | null
+          pull_operator_id: number | null
+          pull_shift_id: number | null
+          quantity: number
+          source_uc: string | null
+          storage_operator_id: number | null
+          storage_shift_id: number | null
+          task_status: string | null
+          unit: string | null
+          updated_at: string
+          warehouse_task: string
+        }
+        Insert: {
+          author?: string | null
+          confirmation_date?: string | null
+          confirmation_time?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          creation_date?: string | null
+          creation_time?: string | null
+          dedup_key: string
+          document?: string | null
+          goods_receipt_date?: string | null
+          id?: number
+          lot?: string | null
+          material_code?: string | null
+          material_description?: string | null
+          operational_pull_day?: string | null
+          operational_storage_day?: string | null
+          process_type: string
+          production_order?: string | null
+          pull_operator_id?: number | null
+          pull_shift_id?: number | null
+          quantity?: number
+          source_uc?: string | null
+          storage_operator_id?: number | null
+          storage_shift_id?: number | null
+          task_status?: string | null
+          unit?: string | null
+          updated_at?: string
+          warehouse_task: string
+        }
+        Update: {
+          author?: string | null
+          confirmation_date?: string | null
+          confirmation_time?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          creation_date?: string | null
+          creation_time?: string | null
+          dedup_key?: string
+          document?: string | null
+          goods_receipt_date?: string | null
+          id?: number
+          lot?: string | null
+          material_code?: string | null
+          material_description?: string | null
+          operational_pull_day?: string | null
+          operational_storage_day?: string | null
+          process_type?: string
+          production_order?: string | null
+          pull_operator_id?: number | null
+          pull_shift_id?: number | null
+          quantity?: number
+          source_uc?: string | null
+          storage_operator_id?: number | null
+          storage_shift_id?: number | null
+          task_status?: string | null
+          unit?: string | null
+          updated_at?: string
+          warehouse_task?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "warehouse_tasks_pull_operator_id_fkey"
+            columns: ["pull_operator_id"]
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "warehouse_tasks_pull_shift_id_fkey"
+            columns: ["pull_shift_id"]
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "warehouse_tasks_storage_operator_id_fkey"
+            columns: ["storage_operator_id"]
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "warehouse_tasks_storage_shift_id_fkey"
+            columns: ["storage_shift_id"]
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      work_schedules: {
+        Row: {
+          active: boolean
+          break_end: string | null
+          break_start: string | null
+          created_at: string
+          description: string | null
+          end_time: string | null
+          id: number
+          name: string
+          shift_id: number | null
+          start_time: string | null
+          updated_at: string
+          weekday: number
+        }
+        Insert: {
+          active?: boolean
+          break_end?: string | null
+          break_start?: string | null
+          created_at?: string
+          description?: string | null
+          end_time?: string | null
+          id?: number
+          name: string
+          shift_id?: number | null
+          start_time?: string | null
+          updated_at?: string
+          weekday: number
+        }
+        Update: {
+          active?: boolean
+          break_end?: string | null
+          break_start?: string | null
+          created_at?: string
+          description?: string | null
+          end_time?: string | null
+          id?: number
+          name?: string
+          shift_id?: number | null
+          start_time?: string | null
+          updated_at?: string
+          weekday?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_schedules_shift_id_fkey"
+            columns: ["shift_id"]
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
-      [_ in never]: never
+      production_order_metrics: {
+        Row: {
+          actual_end: string | null
+          actual_start: string | null
+          balance_quantity: number | null
+          confirmed_quantity: number | null
+          created_date: string | null
+          excess_quantity: number | null
+          first_pull_at: string | null
+          id: number | null
+          last_pull_at: string | null
+          lot: string | null
+          material_code: string | null
+          material_description: string | null
+          order_number: string | null
+          planned_quantity: number | null
+          planned_start: string | null
+          pull_efficiency_percent: number | null
+          pulled_quantity: number | null
+          required_quantity: number | null
+          sap_supplied_quantity: number | null
+          status: Database["public"]["Enums"]["order_status"] | null
+          unit: string | null
+        }
+        Relationships: []
+      }
+      sap_reconciliation: {
+        Row: {
+          classification: string | null
+          difference_quantity: number | null
+          id: number | null
+          lot: string | null
+          material_code: string | null
+          material_description: string | null
+          order_number: string | null
+          physical_quantity: number | null
+          sap_quantity: number | null
+          unit: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      [_ in never]: never
+      classify_warehouse_task_shifts: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
+      current_user_role: {
+        Args: Record<PropertyKey, never>
+        Returns: Database["public"]["Enums"]["user_role"]
+      }
+      get_shift_for_datetime: {
+        Args: { p_datetime: string; p_operator_id: number }
+        Returns: {
+          operational_day: string
+          shift_id: number
+        }[]
+      }
+      refresh_order_metrics: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
-      [_ in never]: never
+      order_status: "not_started" | "in_progress" | "completed" | "excess"
+      user_role: "admin" | "manager" | "operator"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -4606,7 +5204,10 @@ export const Constants = {
     Enums: {},
   },
   public: {
-    Enums: {},
+    Enums: {
+      order_status: ["not_started", "in_progress", "completed", "excess"],
+      user_role: ["admin", "manager", "operator"],
+    },
   },
   realtime: {
     Enums: {
