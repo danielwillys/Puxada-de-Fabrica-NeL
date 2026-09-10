@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { Boxes, Loader2, UserPlus } from "lucide-react";
+import { Loader2, UserPlus } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,9 +45,11 @@ export function SignupPage() {
     <div className="flex min-h-full items-center justify-center bg-gradient-to-br from-primary/15 via-background to-primary/10 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="items-center text-center">
-          <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Boxes className="h-6 w-6" />
-          </div>
+          <img
+            src="/logo.png"
+            alt="Puxada de Fábrica N&L"
+            className="mb-1 h-14 w-14 rounded-xl object-cover"
+          />
           <CardTitle className="text-xl">Criar conta</CardTitle>
           <CardDescription>
             O primeiro usuário cadastrado recebe o perfil de Administrador.

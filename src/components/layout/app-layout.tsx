@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
-  Boxes,
   ClipboardList,
   FileUp,
   LayoutDashboard,
@@ -67,15 +66,17 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
 function Brand() {
   return (
     <div className="flex items-center gap-2.5 px-2">
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-        <Boxes className="h-5 w-5" />
-      </div>
+      <img
+        src="/logo.png"
+        alt="Puxada de Fábrica N&L"
+        className="h-9 w-9 rounded-lg object-cover"
+      />
       <div className="leading-tight">
         <p className="text-sm font-semibold tracking-wide text-sidebar-foreground">
-          CONVERGE.AI
+          Puxada de Fábrica N&L
         </p>
         <p className="text-[11px] text-sidebar-foreground/60">
-          Puxada de Fábrica
+          Operação & Rastreabilidade
         </p>
       </div>
     </div>
