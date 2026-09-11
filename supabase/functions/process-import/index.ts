@@ -364,36 +364,58 @@ Deno.serve(async (req) => {
       const keyCol = KEY_COLUMN[fileType];
       const keyOf = (r: Record<string, unknown>) =>
         String(r[keyCol] ?? r.dedup_key ?? r.order_number ?? "");
-      const keys = validRows.map(keyOf);
+
+      // Which rows already exist? Small chunks keep the request URL short; a
+      // long `.in()` list can exceed URL limits and fail, which would make us
+      // try to insert rows that already exist.
       const existingKeys = new Set<string>();
-      for (const keyChunk of chunk(keys, 500)) {
-        const { data: existing } = await supabase
+      let existenceUnknown = false;
+      for (const keyChunk of chunk(validRows.map(keyOf), 100)) {
+        const { data: existing, error: lookupErr } = await supabase
           .from(table)
           .select(keyCol)
           .in(keyCol, keyChunk);
+        if (lookupErr) {
+          existenceUnknown = true;
+          break;
+        }
         (existing ?? []).forEach((e) =>
           existingKeys.add(String((e as Record<string, unknown>)[keyCol])),
         );
       }
 
-      const toInsert = validRows.filter((r) => !existingKeys.has(keyOf(r)));
-      const toUpdate = validRows.filter((r) => existingKeys.has(keyOf(r)));
+      const toInsert = existenceUnknown
+        ? []
+        : validRows.filter((r) => !existingKeys.has(keyOf(r)));
+      const toUpdate = existenceUnknown
+        ? validRows
+        : validRows.filter((r) => existingKeys.has(keyOf(r)));
 
-      if (toInsert.length > 0) {
-        for (const batch of chunk(toInsert, 500)) {
-          const { error: insErr } = await supabase.from(table).insert(batch);
-          if (insErr) throw new Error(`Falha ao inserir: ${insErr.message}`);
+      for (const batch of chunk(toInsert, 500)) {
+        const { error: insErr } = await supabase.from(table).insert(batch);
+        if (!insErr) {
           inserted += batch.length;
+          continue;
         }
-      }
-      if (toUpdate.length > 0) {
-        for (const batch of chunk(toUpdate, 500)) {
-          const { error: updErr } = await supabase
+        // A row that already exists (missed lookup or concurrent import) must be
+        // updated, never abort the whole import.
+        if (/duplicate key/i.test(insErr.message)) {
+          const { error: retryErr } = await supabase
             .from(table)
             .upsert(batch, { onConflict: keyCol });
-          if (updErr) throw new Error(`Falha ao atualizar: ${updErr.message}`);
+          if (retryErr) throw new Error(`Falha ao atualizar: ${retryErr.message}`);
           updated += batch.length;
+          continue;
         }
+        throw new Error(`Falha ao inserir: ${insErr.message}`);
+      }
+
+      for (const batch of chunk(toUpdate, 500)) {
+        const { error: updErr } = await supabase
+          .from(table)
+          .upsert(batch, { onConflict: keyCol });
+        if (updErr) throw new Error(`Falha ao atualizar: ${updErr.message}`);
+        updated += batch.length;
       }
     }
 

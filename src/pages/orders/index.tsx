@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, FileText, Search, Sheet as SheetIcon } from "lucide-react";
 import { FilterBar } from "@/components/filter-bar";
 import { StatusBadge } from "@/components/status-badge";
@@ -17,7 +17,8 @@ import {
 } from "@/components/ui/table";
 import { exportCsv, exportExcel } from "@/lib/excel";
 import { fmtDate, fmtDateTime, fmtPercent, fmtQty } from "@/lib/format";
-import { EMPTY_FILTERS, useDebouncedFilters, useOrdersExport, useOrdersPage } from "@/lib/queries";
+import { useFilters } from "@/context/filters-context";
+import { useOrdersExport, useOrdersPage } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 const COLUMNS: {
@@ -105,16 +106,7 @@ function cellValue(row: Record<string, unknown>, key: string): string {
 
 export function OrdersPage() {
   const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const initialStatus = (params.get("status") ?? "") as string;
-  const { filters, debounced, setFilters } = useDebouncedFilters({
-    ...EMPTY_FILTERS,
-    status: (["not_started", "in_progress", "completed", "excess"] as const).includes(
-      initialStatus as never,
-    )
-      ? (initialStatus as "not_started")
-      : "",
-  });
+  const { filters, debounced, setFilters } = useFilters();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
