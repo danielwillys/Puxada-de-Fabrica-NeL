@@ -48,9 +48,11 @@ import { cn } from "@/lib/utils";
 
 const TYPES: ImportType[] = ["cooispi", "recebimento", "mon"];
 
+/** Identify the file type by its headers, using the same tolerant matching used
+ *  for validation — accents, case, punctuation and spacing are ignored. */
 function detectType(headers: string[]): ImportType | null {
   for (const type of TYPES) {
-    if (REQUIRED_HEADERS[type].every((h) => headers.includes(h))) return type;
+    if (missingRequiredHeaders(headers, type).length === 0) return type;
   }
   return null;
 }
@@ -108,7 +110,9 @@ export function ImportPage() {
         setParsed(rows);
         setType(detectType(hs));
       }
-    } catch {
+    } catch (e) {
+      // Log the real cause so a failed read can be diagnosed from the console.
+      console.error("Falha ao ler a planilha:", e);
       setParseError("Não foi possível ler o arquivo. Use um arquivo .xlsx ou .xls.");
     } finally {
       setParsing(false);

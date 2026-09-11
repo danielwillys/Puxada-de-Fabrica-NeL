@@ -49,8 +49,26 @@ const toNumber = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** Excel serial (1899-12-30 epoch) -> yyyy-mm-dd, using UTC. */
+const excelSerialDate = (serial: number): string => {
+  const d = new Date(Math.round((serial - 25569) * 86400000));
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+};
+
+/** Excel serial fraction of a day -> HH:MM:SS. */
+const excelSerialTime = (serial: number): string => {
+  const frac = ((serial % 1) + 1) % 1;
+  let secs = Math.round(frac * 86400);
+  if (secs >= 86400) secs = 0;
+  return `${pad2(Math.floor(secs / 3600))}:${pad2(Math.floor((secs % 3600) / 60))}:${pad2(secs % 60)}`;
+};
+
 const parseDate = (v: unknown): string | null => {
   if (v === null || v === undefined || String(v).trim() === "") return null;
+  // Raw Excel date cell (date serial >= 1) arriving as a number.
+  if (typeof v === "number" && Number.isFinite(v) && v >= 1) return excelSerialDate(v);
   const s = String(v).trim();
   // dd.mm.yyyy, dd/mm/yyyy or US mm/dd/yyyy, optionally followed by a time part
   const m = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{2,4})(?:\s.*)?$/);
@@ -65,7 +83,7 @@ const parseDate = (v: unknown): string | null => {
     }
     let yyyy = m[3];
     if (yyyy.length === 2) yyyy = (Number(yyyy) > 30 ? "19" : "20") + yyyy;
-    return `${yyyy}-${String(mon).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    return `${yyyy}-${pad2(mon)}-${pad2(day)}`;
   }
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
@@ -73,7 +91,14 @@ const parseDate = (v: unknown): string | null => {
 
 const parseTime = (v: unknown): string | null => {
   if (v === null || v === undefined || String(v).trim() === "") return null;
+  // Raw Excel time cell (fraction of a day) arriving as a number.
+  if (typeof v === "number" && Number.isFinite(v)) return excelSerialTime(v);
   const s = String(v).trim();
+  // A numeric string without a colon is an Excel serial time as well.
+  if (/^\d*\.\d+$/.test(s)) {
+    const n = Number(s);
+    if (Number.isFinite(n)) return excelSerialTime(n);
+  }
   // Accepts 24h ("19:07:24") and 12h with AM/PM ("7:07:24 PM")
   const m = s.match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*([AaPp][Mm])?/);
   if (!m) return null;
@@ -84,7 +109,7 @@ const parseTime = (v: unknown): string | null => {
   if (meridiem === "PM" && hh < 12) hh += 12;
   if (meridiem === "AM" && hh === 12) hh = 0;
   if (hh > 23 || Number(mm) > 59 || Number(ss) > 59) return null;
-  return `${String(hh).padStart(2, "0")}:${mm.padStart(2, "0")}:${ss.padStart(2, "0")}`;
+  return `${pad2(hh)}:${mm.padStart(2, "0")}:${ss.padStart(2, "0")}`;
 };
 
 const parseTs = (v: unknown): string | null => {
