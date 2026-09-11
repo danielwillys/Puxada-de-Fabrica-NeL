@@ -90,14 +90,8 @@ export function LoginPage() {
               )}
               Entrar
             </Button>
-            <p className="text-center text-sm text-muted-foreground">
-              Ainda não tem acesso?{" "}
-              <a
-                href="/signup"
-                className="font-medium text-primary hover:underline"
-              >
-                Criar conta
-              </a>
+            <p className="text-center text-xs text-muted-foreground">
+              Acesso liberado pela administração do sistema.
             </p>
           </form>
         </CardContent>

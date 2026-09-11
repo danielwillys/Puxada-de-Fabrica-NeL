@@ -1,20 +1,44 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  ArrowLeftRight,
   Boxes,
   CheckCircle2,
   Clock,
   Factory,
   Flag,
   Hourglass,
+  Loader2,
   Package,
+  RotateCcw,
   User,
 } from "lucide-react";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth, usePermission } from "@/context/auth-context";
 import { StatusBadge, TaskStatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -32,7 +56,7 @@ import {
   parseLocalDateTime,
 } from "@/lib/format";
 import { useOrderMetrics, useOrderReceipts, useOrderTasks } from "@/lib/queries";
-import type { WarehouseTask } from "@/lib/types";
+import type { ProductionReceipt, WarehouseTask } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function SummaryItem({ label, value }: { label: string; value: string }) {
@@ -96,9 +120,44 @@ function taskStorageAt(t: WarehouseTask): Date | null {
 
 export function OrderDetail() {
   const { orderNumber = "" } = useParams();
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === "admin";
+  const canReversal = usePermission("orders:reversal");
+  const canReversalAction = isAdmin || canReversal;
   const metrics = useOrderMetrics(orderNumber);
   const receipts = useOrderReceipts(orderNumber);
   const tasks = useOrderTasks(orderNumber);
+  const qc = useQueryClient();
+
+  const [receiptAction, setReceiptAction] = useState<{
+    receipt: ProductionReceipt;
+    reason: string;
+  } | null>(null);
+
+  const toggleReceipt = useMutation({
+    mutationFn: async (r: ProductionReceipt) => {
+      const { data, error } = await supabase.rpc("set_receipt_valid", {
+        p_receipt_id: r.id,
+        p_valid: !r.is_valid,
+        p_motivo: r.is_valid ? receiptAction?.reason ?? null : null,
+      });
+      if (error) throw error;
+      if (data && data !== "ok") throw new Error(String(data));
+    },
+    onSuccess: () => {
+      toast.success(receiptAction?.receipt.is_valid ? "Recebimento reativado." : "Recebimento estornado.");
+      setReceiptAction(null);
+      qc.invalidateQueries({ queryKey: ["order-receipts", orderNumber] });
+      qc.invalidateQueries({ queryKey: ["order-metrics", orderNumber] });
+      qc.invalidateQueries({ queryKey: ["audit"] });
+    },
+    onError: (e) =>
+      toast.error(
+        typeof e === "object" && e !== null && "message" in e
+          ? String((e as { message: string }).message)
+          : "Não foi possível atualizar o recebimento.",
+      ),
+  });
 
   const row = metrics.data;
   const receiptList = useMemo(() => receipts.data ?? [], [receipts.data]);
@@ -350,11 +409,12 @@ export function OrderDetail() {
                 <TableHead>Depósito (data)</TableHead>
                 <TableHead>Depósito (hora)</TableHead>
                 <TableHead>Válido</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {receiptList.map((r) => (
-                <TableRow key={r.id}>
+                <TableRow key={r.id} className={cn(!r.is_valid && "bg-danger/5")}>
                   <TableCell className="font-medium">{r.document_number}</TableCell>
                   <TableCell>{r.material_code}</TableCell>
                   <TableCell className="max-w-[220px] truncate">
@@ -371,14 +431,38 @@ export function OrderDetail() {
                     {r.is_valid ? (
                       <Badge variant="success">Sim</Badge>
                     ) : (
-                      <Badge variant="danger">Não</Badge>
+                      <Badge variant="danger" title={r.reversal_reason ?? undefined}>
+                        Estornado
+                      </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {canReversalAction ? (
+                      <Button
+                        variant={r.is_valid ? "outline" : "ghost"}
+                        size="sm"
+                        className="h-8"
+                        onClick={() => setReceiptAction({ receipt: r, reason: "Excesso de material" })}
+                      >
+                        {r.is_valid ? (
+                          <>
+                            <RotateCcw className="h-3.5 w-3.5" /> Estornar
+                          </>
+                        ) : (
+                          <>
+                            <ArrowLeftRight className="h-3.5 w-3.5" /> Reativar
+                          </>
+                        )}
+                      </Button>
+                    ) : (
+                      "—"
                     )}
                   </TableCell>
                 </TableRow>
               ))}
               {receiptList.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={12} className="py-8 text-center text-muted-foreground">
                     Nenhum recebimento vinculado a esta ordem.
                   </TableCell>
                 </TableRow>
@@ -387,6 +471,67 @@ export function OrderDetail() {
           </Table>
         </div>
       </Card>
+
+      {/* Estorno / reativação de recebimento */}
+      <Dialog open={Boolean(receiptAction)} onOpenChange={(o) => (o ? null : setReceiptAction(null))}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {receiptAction?.receipt.is_valid ? "Estornar recebimento" : "Reativar recebimento"}
+            </DialogTitle>
+            <DialogDescription>
+              {receiptAction?.receipt.is_valid ? (
+                <>
+                  Documento <strong>{receiptAction.receipt.document_number}</strong> ·{" "}
+                  {fmtQty(receiptAction.receipt.quantity)} {receiptAction.receipt.unit ?? ""}. O
+                  palete estornado deixa de contar no saldo da ordem (material devolvido à
+                  produção). A operação é registrada na auditoria.
+                </>
+              ) : (
+                <>Reativa o documento <strong>{receiptAction?.receipt.document_number}</strong> para contabilização novamente.</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {receiptAction?.receipt.is_valid ? (
+            <div className="flex flex-col gap-1.5">
+              <Label>Motivo do estorno</Label>
+              <Select
+                value={receiptAction.reason}
+                onValueChange={(v) => setReceiptAction({ ...receiptAction, reason: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o motivo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Excesso de material">Excesso de material</SelectItem>
+                  <SelectItem value="Recebimento errado">Recebimento errado</SelectItem>
+                  <SelectItem value="Devolução à produção">Devolução à produção</SelectItem>
+                  <SelectItem value="Divergência de quantidade">Divergência de quantidade</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReceiptAction(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant={receiptAction?.receipt.is_valid ? "destructive" : "default"}
+              onClick={() => receiptAction && toggleReceipt.mutate(receiptAction.receipt)}
+              disabled={toggleReceipt.isPending || !receiptAction?.reason}
+            >
+              {toggleReceipt.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : receiptAction?.receipt.is_valid ? (
+                <RotateCcw className="h-4 w-4" />
+              ) : (
+                <ArrowLeftRight className="h-4 w-4" />
+              )}
+              {receiptAction?.receipt.is_valid ? "Confirmar estorno" : "Reativar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

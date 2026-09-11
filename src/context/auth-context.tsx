@@ -14,12 +14,9 @@ interface AuthContextValue {
   session: Session | null;
   profile: Profile | null;
   initialized: boolean;
+  /** Permissões do perfil do usuário logado. */
+  permissions: string[];
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (
-    email: string,
-    password: string,
-    name: string,
-  ) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -29,6 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [permissions, setPermissions] = useState<string[]>([]);
   const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
@@ -37,11 +35,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTimeout(() => {
         supabase
           .from("profiles")
-          .select("id,email,name,role")
+          .select("id,email,name,role,role_id,active,user_roles(permissions)")
           .eq("id", userId)
           .maybeSingle()
           .then(({ data }) => {
-            setProfile((data as unknown as Profile) ?? null);
+            const row = data as
+              | (Partial<Profile> & {
+                  user_roles?: { permissions?: unknown } | null;
+                })
+              | null;
+            setProfile(
+              row
+                ? {
+                    id: row.id ?? userId,
+                    email: row.email ?? "",
+                    name: row.name ?? "",
+                    role: row.role ?? "operator",
+                    role_id: row.role_id ?? null,
+                    active: row.active ?? true,
+                  }
+                : null,
+            );
+            const perms = Array.isArray(row?.user_roles?.permissions)
+              ? (row.user_roles!.permissions as unknown[])
+                  .filter((p): p is string => typeof p === "string")
+              : [];
+            // Admin keeps full access regardless of stored permissions.
+            setPermissions(
+              row?.role === "admin"
+                ? ["*"]
+                : perms.length > 0
+                  ? perms
+                  : [],
+            );
           });
       }, 0);
     };
@@ -52,7 +78,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(s?.user ?? null);
         setInitialized(true);
         if (s?.user) loadProfile(s.user.id);
-        else setProfile(null);
+        else {
+          setProfile(null);
+          setPermissions([]);
+        }
       },
     );
 
@@ -71,21 +100,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     profile,
     initialized,
+    permissions,
     signIn: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
-      });
-      return { error };
-    },
-    signUp: async (email, password, name) => {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { name },
-          emailRedirectTo: `${window.location.origin}/`,
-        },
       });
       return { error };
     },
@@ -102,4 +121,11 @@ export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth deve ser usado dentro de AuthProvider");
   return ctx;
+}
+
+/** Hook: verifica se o usuário tem uma permissão (admin tem "*" = todas). */
+// eslint-disable-next-line react-refresh/only-export-components
+export function usePermission(perm: string): boolean {
+  const { permissions } = useAuth();
+  return permissions.includes("*") || permissions.includes(perm);
 }

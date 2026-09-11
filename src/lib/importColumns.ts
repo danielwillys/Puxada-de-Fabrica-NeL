@@ -163,6 +163,7 @@ const DATE_FIELDS = new Set([
 ]);
 const TIME_FIELDS = new Set([
   "goods_receipt_time",
+  "storage_time",
   "creation_time",
   "confirmation_time",
 ]);

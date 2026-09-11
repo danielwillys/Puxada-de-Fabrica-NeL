@@ -11,7 +11,9 @@ import {
   Menu,
   Settings,
   ShieldCheck,
+  UserRoundCog,
   Users,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
@@ -30,23 +32,30 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   adminOnly?: boolean;
+  /** Permissão necessária para exibir o item (quando não admin). */
+  permission?: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/ordens", label: "Ordens de Produção", icon: ClipboardList },
-  { to: "/performance", label: "Performance", icon: Gauge },
-  { to: "/importacao", label: "Importação de Dados", icon: FileUp },
-  { to: "/operadores", label: "Operadores", icon: Users },
-  { to: "/turnos", label: "Turnos", icon: Clock },
-  { to: "/escalas", label: "Escalas", icon: CalendarDays },
-  { to: "/configuracoes", label: "Configurações", icon: Settings },
-  { to: "/auditoria", label: "Auditoria", icon: ShieldCheck, adminOnly: true },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard" },
+  { to: "/ordens", label: "Ordens de Produção", icon: ClipboardList, permission: "orders" },
+  { to: "/performance", label: "Performance", icon: Gauge, permission: "performance" },
+  { to: "/importacao", label: "Importação de Dados", icon: FileUp, permission: "import" },
+  { to: "/operadores", label: "Operadores", icon: Users, permission: "operators" },
+  { to: "/turnos", label: "Turnos", icon: Clock, permission: "shifts" },
+  { to: "/escalas", label: "Escalas", icon: CalendarDays, permission: "schedules" },
+  { to: "/usuarios", label: "Usuários", icon: UserRoundCog, permission: "users" },
+  { to: "/perfis", label: "Perfis e Permissões", icon: UsersRound, permission: "roles" },
+  { to: "/configuracoes", label: "Configurações", icon: Settings, permission: "settings" },
+  { to: "/auditoria", label: "Auditoria", icon: ShieldCheck, permission: "audit" },
 ];
 
 function NavList({ onNavigate }: { onNavigate?: () => void }) {
-  const { profile } = useAuth();
-  const items = NAV_ITEMS.filter((i) => !i.adminOnly || profile?.role === "admin");
+  const { profile, permissions } = useAuth();
+  const isAdmin = profile?.role === "admin";
+  const items = NAV_ITEMS.filter(
+    (i) => isAdmin || permissions.includes("*") || (i.permission && permissions.includes(i.permission)),
+  );
   return (
     <nav className="flex flex-col gap-1">
       {items.map((item) => (

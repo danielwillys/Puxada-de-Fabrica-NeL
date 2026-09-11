@@ -1,0 +1,55 @@
+-- Estorno de recebimento: rastreio do motivo e da data do estorno.
+alter table public.production_receipts
+  add column if not exists reversal_reason text,
+  add column if not exists reversed_at timestamptz;
+
+-- Estorna (ou reativa) um recebimento. Exige perfil admin, registra auditoria e
+-- recalcula as métricas da ordem (o palete estornado deixa de contar no saldo).
+create or replace function public.set_receipt_valid(
+  p_receipt_id bigint,
+  p_valid boolean,
+  p_motivo text default null
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_cur boolean;
+  v_ord text;
+  v_doc text;
+begin
+  if public.current_user_role() <> 'admin' then
+    return 'Apenas administradores podem estornar recebimentos.';
+  end if;
+  select is_valid, production_order, document_number
+    into v_cur, v_ord, v_doc
+  from public.production_receipts where id = p_receipt_id;
+  if v_cur is null then
+    return 'Recebimento não encontrado.';
+  end if;
+  update public.production_receipts
+  set is_valid = p_valid,
+      reversal_reason = case when p_valid then null else coalesce(nullif(trim(coalesce(p_motivo,'')),''), 'Estorno manual') end,
+      reversed_at = case when p_valid then null else now() end,
+      updated_at = now()
+  where id = p_receipt_id;
+  insert into public.audit_logs (user_id, action, entity, entity_id, old_value, new_value)
+  values (auth.uid(),
+          case when p_valid then 'reativar_recebimento' else 'estornar_recebimento' end,
+          'production_receipts', p_receipt_id::text,
+          jsonb_build_object('is_valid', v_cur, 'document_number', v_doc, 'production_order', v_ord),
+          jsonb_build_object('is_valid', p_valid, 'reversal_reason', p_motivo));
+  perform public.refresh_order_metrics();
+  return 'ok';
+end;
+$$;
+
+-- DLOPES (operador 6) trabalha no horário administrativo (08:00-16:30).
+-- Estende a alocação ADM dele para cobrir todo o histórico de tarefas.
+update public.operator_shift_history
+set start_date = '2026-08-01'::date
+where id = 28;
+
+-- Reprocessa a classificação com a função otimizada (set-based).
+select public.reprocess_shift_classification();

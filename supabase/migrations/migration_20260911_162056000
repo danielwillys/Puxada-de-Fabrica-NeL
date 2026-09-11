@@ -1,0 +1,50 @@
+-- Set-based classify: replaces the per-row plpgsql loop (faster, no timeout).
+create or replace function public.classify_warehouse_task_shifts()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  -- Pulls (1020): author + creation ts -> pull operator/shift/day
+  update public.warehouse_tasks t
+  set pull_operator_id = m.operator_id,
+      pull_shift_id = m.shift_id,
+      operational_pull_day = m.operational_day
+  from (
+    select t2.id as task_id,
+           o.id as operator_id,
+           g.shift_id,
+           g.operational_day
+    from public.warehouse_tasks t2
+    join public.operators o
+      on (o.name = trim(coalesce(t2.author,'')) or o.employee_number = trim(coalesce(t2.author,'')))
+    cross join lateral public.get_shift_for_datetime(o.id, (t2.creation_date + t2.creation_time)::timestamp) g
+    where t2.process_type = '1020'
+      and t2.creation_date is not null and t2.creation_time is not null
+      and g.shift_id is not null
+  ) m
+  where t.id = m.task_id;
+
+  -- Storages (1012): confirmed_by + confirmation ts -> storage operator/shift/day
+  update public.warehouse_tasks t
+  set storage_operator_id = m.operator_id,
+      storage_shift_id = m.shift_id,
+      operational_storage_day = m.operational_day
+  from (
+    select t2.id as task_id,
+           o.id as operator_id,
+           g.shift_id,
+           g.operational_day
+    from public.warehouse_tasks t2
+    join public.operators o
+      on (o.name = trim(coalesce(t2.confirmed_by,'')) or o.employee_number = trim(coalesce(t2.confirmed_by,'')))
+    cross join lateral public.get_shift_for_datetime(o.id, (t2.confirmation_date + t2.confirmation_time)::timestamp) g
+    where t2.process_type = '1012'
+      and t2.confirmation_date is not null and t2.confirmation_time is not null
+      and g.shift_id is not null
+  ) m
+  where t.id = m.task_id;
+$$;
+
+-- Reprocess everything with the new function.
+select public.reprocess_shift_classification();
