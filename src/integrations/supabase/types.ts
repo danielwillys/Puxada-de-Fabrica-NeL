@@ -3964,6 +3964,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      reprocess_shift_classification: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       order_status: "not_started" | "in_progress" | "completed" | "excess"

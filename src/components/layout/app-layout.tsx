@@ -1,13 +1,16 @@
 import { useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
+  CalendarDays,
   ClipboardList,
+  Clock,
   FileUp,
   LayoutDashboard,
   LogOut,
   Menu,
   Settings,
   ShieldCheck,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
@@ -32,6 +35,9 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/ordens", label: "Ordens de Produção", icon: ClipboardList },
   { to: "/importacao", label: "Importação de Dados", icon: FileUp },
+  { to: "/operadores", label: "Operadores", icon: Users },
+  { to: "/turnos", label: "Turnos", icon: Clock },
+  { to: "/escalas", label: "Escalas", icon: CalendarDays },
   { to: "/configuracoes", label: "Configurações", icon: Settings },
   { to: "/auditoria", label: "Auditoria", icon: ShieldCheck, adminOnly: true },
 ];
