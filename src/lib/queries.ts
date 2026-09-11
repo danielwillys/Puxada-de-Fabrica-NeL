@@ -4,10 +4,12 @@ import { supabase } from "@/integrations/supabase/client";
 import type {
   AuditLog,
   ImportRecord,
+  Operator,
   OrderStatus,
   ProductionOrderMetric,
   ProductionReceipt,
   SapReconciliation,
+  Shift,
   SystemSetting,
   WarehouseTask,
 } from "./types";
@@ -375,5 +377,85 @@ export function useProfiles() {
       }[];
     },
     staleTime: 60_000,
+  });
+}
+
+// ---------------------------------------------------------------- master data
+
+export function useShifts() {
+  return useQuery({
+    queryKey: ["shifts"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("shifts")
+        .select("*")
+        .order("code", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as unknown as Shift[];
+    },
+  });
+}
+
+export function useOperators() {
+  return useQuery({
+    queryKey: ["operators"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("operators")
+        .select("*")
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as unknown as Operator[];
+    },
+  });
+}
+
+export interface OperatorShiftAllocation {
+  id: number;
+  operator_id: number | null;
+  shift_id: number | null;
+  start_date: string;
+  end_date: string | null;
+  active: boolean;
+}
+
+export function useOperatorShiftHistory() {
+  return useQuery({
+    queryKey: ["operator-shift-history"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("operator_shift_history")
+        .select("*")
+        .order("start_date", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as unknown as OperatorShiftAllocation[];
+    },
+  });
+}
+
+export interface WorkSchedule {
+  id: number;
+  name: string;
+  description: string | null;
+  shift_id: number | null;
+  weekday: number;
+  start_time: string | null;
+  end_time: string | null;
+  break_start: string | null;
+  break_end: string | null;
+  active: boolean;
+}
+
+export function useWorkSchedules() {
+  return useQuery({
+    queryKey: ["work-schedules"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("work_schedules")
+        .select("*")
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as unknown as WorkSchedule[];
+    },
   });
 }

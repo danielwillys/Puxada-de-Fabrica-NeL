@@ -6,6 +6,9 @@ import { FactoryPullDashboard } from "@/pages/dashboard/factory-pull";
 import { OrdersPage } from "@/pages/orders";
 import { OrderDetail } from "@/pages/orders/detail";
 import { ImportPage } from "@/pages/import";
+import { OperatorsPage } from "@/pages/operators";
+import { ShiftsPage } from "@/pages/shifts";
+import { SchedulesPage } from "@/pages/schedules";
 import { SettingsPage } from "@/pages/settings";
 import { AuditPage } from "@/pages/audit";
 import { RouteError } from "@/pages/route-error";
@@ -52,6 +55,21 @@ export const routers = [
         path: "importacao",
         name: "importacao",
         element: <ImportPage />,
+      },
+      {
+        path: "operadores",
+        name: "operadores",
+        element: <OperatorsPage />,
+      },
+      {
+        path: "turnos",
+        name: "turnos",
+        element: <ShiftsPage />,
+      },
+      {
+        path: "escalas",
+        name: "escalas",
+        element: <SchedulesPage />,
       },
       {
         path: "configuracoes",

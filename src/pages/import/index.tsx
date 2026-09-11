@@ -31,9 +31,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  COLUMN_MAPS,
-  REQUIRED_HEADERS,
+  buildHeaderLookup,
+  missingRequiredHeaders,
+  normalizeHeader,
   normalizeRows,
+  unmappedHeaders,
   type ImportResult,
   type ImportType,
 } from "@/lib/importColumns";
@@ -71,6 +73,10 @@ export function ImportPage() {
     () => (type ? normalizeRows(parsed, type) : []),
     [parsed, type],
   );
+  const headerLookup = useMemo(
+    () => (type ? buildHeaderLookup(type) : null),
+    [type],
+  );
 
   if (profile?.role !== "admin") {
     return (
@@ -80,7 +86,8 @@ export function ImportPage() {
     );
   }
 
-  const missingHeaders = type ? REQUIRED_HEADERS[type].filter((h) => !headers.includes(h)) : [];
+  const missingHeaders = type ? missingRequiredHeaders(headers, type) : [];
+  const ignoredHeaders = type ? unmappedHeaders(headers, type) : [];
 
   const handleFile = async (f: File | null) => {
     setFile(f);
@@ -274,9 +281,18 @@ export function ImportPage() {
                 </ul>
               </div>
             ) : type ? (
-              <p className="flex items-center gap-1.5 text-sm text-success">
-                <CheckCircle2 className="h-4 w-4" /> Colunas obrigatórias presentes.
-              </p>
+              <div className="flex flex-col gap-1">
+                <p className="flex items-center gap-1.5 text-sm text-success">
+                  <CheckCircle2 className="h-4 w-4" /> Colunas obrigatórias presentes.
+                </p>
+                {ignoredHeaders.length > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Colunas não utilizadas ({ignoredHeaders.length}):{" "}
+                    {ignoredHeaders.slice(0, 6).join(", ")}
+                    {ignoredHeaders.length > 6 ? "…" : ""}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
 
             {parsed.length > 0 ? (
@@ -295,7 +311,7 @@ export function ImportPage() {
                     {parsed.slice(0, 6).map((r, i) => (
                       <TableRow key={i}>
                         {headers.slice(0, 8).map((h) => {
-                          const field = type ? COLUMN_MAPS[type][h] : undefined;
+                          const field = headerLookup?.get(normalizeHeader(h));
                           const value = field ? normalized[i]?.[field] : r[h];
                           return (
                             <TableCell key={h} className="whitespace-nowrap text-xs">

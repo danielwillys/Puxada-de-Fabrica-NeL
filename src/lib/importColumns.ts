@@ -63,6 +63,92 @@ export const REQUIRED_HEADERS: Record<ImportType, string[]> = {
   mon: ["Tarefa de depósito", "Tipo proc.depósito"],
 };
 
+/**
+ * Header names are matched loosely (accents, case, punctuation and spacing are
+ * ignored) so small variations in the SAP export never drop a column silently.
+ */
+export function normalizeHeader(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/** Additional accepted spellings per field (already normalized). */
+const FIELD_ALIASES: Record<string, string[]> = {
+  storage_date: [
+    "data real de entrada em deposito",
+    "data real entrada em deposito",
+    "data real da entrada em deposito",
+    "data de entrada em deposito",
+    "data da entrada em deposito",
+  ],
+  storage_time: [
+    "hora real entrada em deposito",
+    "hora real de entrada em deposito",
+    "hora real da entrada em deposito",
+    "hora de entrada em deposito",
+    "hora da entrada em deposito",
+    "hora real entrada deposito",
+  ],
+  goods_receipt_date: [
+    "data real da entrada de mercadorias",
+    "data real de entrada de mercadorias",
+    "data da entrada de mercadorias",
+  ],
+  goods_receipt_time: [
+    "hora da em real",
+    "hora real da em",
+    "hora real da entrada de mercadorias",
+    "hora da entrada de mercadorias",
+  ],
+  creation_date: ["data de criacao", "data criacao"],
+  creation_time: ["hora da criacao", "hora criacao", "hora de criacao"],
+  confirmation_date: [
+    "data da confirmacao",
+    "data de confirmacao",
+    "data confirmacao",
+  ],
+  confirmation_time: [
+    "hora da confirmacao",
+    "hora de confirmacao",
+    "hora confirmacao",
+  ],
+};
+
+/** normalized header -> field for an import type (column map + aliases). */
+export function buildHeaderLookup(type: ImportType): Map<string, string> {
+  const lookup = new Map<string, string>();
+  const fields = new Set<string>();
+  for (const [header, field] of Object.entries(COLUMN_MAPS[type])) {
+    lookup.set(normalizeHeader(header), field);
+    fields.add(field);
+  }
+  for (const field of fields) {
+    for (const alias of FIELD_ALIASES[field] ?? []) {
+      if (!lookup.has(alias)) lookup.set(alias, field);
+    }
+  }
+  return lookup;
+}
+
+/** Required headers that the file does not provide (loose matching). */
+export function missingRequiredHeaders(
+  headers: string[],
+  type: ImportType,
+): string[] {
+  const lookup = buildHeaderLookup(type);
+  return REQUIRED_HEADERS[type].filter((h) => !lookup.has(normalizeHeader(h)));
+}
+
+/** File columns that the import type does not recognize. */
+export function unmappedHeaders(headers: string[], type: ImportType): string[] {
+  const lookup = buildHeaderLookup(type);
+  return headers.filter((h) => !lookup.has(normalizeHeader(h)));
+}
+
 export interface ImportError {
   row: number;
   errors: string[];
@@ -120,11 +206,13 @@ export function normalizeRows(
   rows: Record<string, unknown>[],
   type: ImportType,
 ): Record<string, unknown>[] {
-  const map = COLUMN_MAPS[type];
+  const lookup = buildHeaderLookup(type);
   return rows.map((raw) => {
     const out: Record<string, unknown> = {};
-    for (const [header, field] of Object.entries(map)) {
-      out[field] = convertField(field, raw[header] ?? "");
+    for (const [header, value] of Object.entries(raw)) {
+      const field = lookup.get(normalizeHeader(header));
+      if (!field) continue;
+      out[field] = convertField(field, value);
     }
     return out;
   });
