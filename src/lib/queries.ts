@@ -135,9 +135,11 @@ function applyFilters(q: Builder, f: GlobalFilters): Builder {
       ? periodToRange(f.period)
       : { start: f.startDate, end: f.endDate };
   if (range.start && range.end) {
-    q = q
-      .gte("created_date", `${range.start}T00:00:00`)
-      .lte("created_date", `${range.end}T23:59:59`);
+    // O período é filtrado pela data real de início da ordem (actual_start).
+    // Ordens sem data real usam a data de criação como fallback.
+    q = q.or(
+      `and(actual_start.gte.${range.start}T00:00:00,actual_start.lte.${range.end}T23:59:59),and(actual_start.is.null,created_date.gte.${range.start}T00:00:00,created_date.lte.${range.end}T23:59:59)`,
+    );
   }
   const order = f.orderNumber.trim();
   if (order) q = q.ilike("order_number", `%${order}%`);

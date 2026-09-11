@@ -61,7 +61,9 @@ interface DayPoint {
 function buildDayPoints(rows: ProductionOrderMetric[]): DayPoint[] {
   const map = new Map<string, DayPoint>();
   for (const r of rows) {
-    const day = (r.created_date ?? "").slice(0, 10) || "sem data";
+    // Referência de dia: data real de início (actual_start). Quando não houver,
+    // usa a data de criação como fallback.
+    const day = (r.actual_start ?? r.created_date ?? "").slice(0, 10) || "sem data";
     const p = map.get(day) ?? {
       day,
       planned: 0,
@@ -379,7 +381,7 @@ export function FactoryPullDashboard() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <ChartCard title="Planejado × Produzido × Puxado" sub="Por dia de criação da ordem">
+            <ChartCard title="Planejado × Produzido × Puxado" sub="Por dia real de início da ordem">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dayPoints}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
