@@ -95,7 +95,12 @@ export function ShiftsPage() {
       toast.success("Classificação de turnos reprocessada.");
       qc.invalidateQueries({ queryKey: ["audit"] });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Falha ao reprocessar."),
+    onError: (e) =>
+      toast.error(
+        typeof e === "object" && e !== null && "message" in e
+          ? String((e as { message: string }).message)
+          : "Falha ao reprocessar.",
+      ),
   });
 
   const openNew = () => {

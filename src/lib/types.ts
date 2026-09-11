@@ -59,6 +59,8 @@ export interface ProductionReceipt {
   storage_date: string | null;
   storage_time: string | null;
   is_valid: boolean;
+  reversal_reason: string | null;
+  reversed_at: string | null;
 }
 
 export interface WarehouseTask {

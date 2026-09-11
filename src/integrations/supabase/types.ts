@@ -3587,6 +3587,8 @@ export type Database = {
           process_type: string | null
           production_order: string
           quantity: number
+          reversal_reason: string | null
+          reversed_at: string | null
           storage_date: string | null
           storage_time: string | null
           unit: string | null
@@ -3608,6 +3610,8 @@ export type Database = {
           process_type?: string | null
           production_order: string
           quantity?: number
+          reversal_reason?: string | null
+          reversed_at?: string | null
           storage_date?: string | null
           storage_time?: string | null
           unit?: string | null
@@ -3629,6 +3633,8 @@ export type Database = {
           process_type?: string | null
           production_order?: string
           quantity?: number
+          reversal_reason?: string | null
+          reversed_at?: string | null
           storage_date?: string | null
           storage_time?: string | null
           unit?: string | null
@@ -3976,6 +3982,10 @@ export type Database = {
       reprocess_shift_classification: {
         Args: Record<PropertyKey, never>
         Returns: undefined
+      }
+      set_receipt_valid: {
+        Args: { p_motivo?: string; p_receipt_id: number; p_valid: boolean }
+        Returns: string
       }
     }
     Enums: {
