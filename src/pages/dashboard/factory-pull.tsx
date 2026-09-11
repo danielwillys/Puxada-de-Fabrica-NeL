@@ -36,8 +36,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useImports, useMetrics, useReconciliation } from "@/lib/queries";
-import { EMPTY_FILTERS, useDebouncedFilters, type GlobalFilters } from "@/lib/queries";
+import { useImports, useMetrics, useReconciliation, type GlobalFilters } from "@/lib/queries";
+import { useFilters } from "@/context/filters-context";
 import { fmtInt, fmtPercent, fmtQty } from "@/lib/format";
 import { ORDER_STATUS_META, type ProductionOrderMetric } from "@/lib/types";
 
@@ -145,7 +145,7 @@ const CHART_TOOLTIP = {
 
 export function FactoryPullDashboard() {
   const navigate = useNavigate();
-  const { filters, debounced, setFilters } = useDebouncedFilters(EMPTY_FILTERS);
+  const { filters, debounced, setFilters } = useFilters();
   const metrics = useMetrics(debounced);
   const reconciliation = useReconciliation(debounced);
   const imports = useImports();
@@ -274,8 +274,11 @@ export function FactoryPullDashboard() {
       .slice(0, 10);
   }, [rows]);
 
-  const openStatus = (status: string) =>
-    navigate(`/ordens?status=${status}`);
+  const openStatus = (status: string) => {
+    // Keep the filter applied on the orders screen (shared, persistent filters).
+    setFilters({ ...filters, status: status as GlobalFilters["status"] });
+    navigate("/ordens");
+  };
 
   const loading = metrics.isLoading;
 
