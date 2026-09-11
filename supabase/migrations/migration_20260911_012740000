@@ -1,0 +1,17 @@
+-- Extend operator->shift allocations back to 2026-08-01 (min task date) so historical tasks classify.
+-- Earliest allocation per operator gets the earlier start; TSOUZA's T1 period (id 17) is reactivated
+-- so his pre-09-11 pulls classify as 1o TURNO, while his current ADM allocation (id 22) stays from 09-11.
+update public.operator_shift_history osh
+set start_date = '2026-08-01'::date
+where osh.id in (
+  select distinct on (operator_id) id
+  from public.operator_shift_history
+  order by operator_id, start_date asc, id asc
+);
+
+update public.operator_shift_history
+set active = true
+where id = 17;
+
+-- Re-run shift classification for all warehouse tasks.
+select public.reprocess_shift_classification();

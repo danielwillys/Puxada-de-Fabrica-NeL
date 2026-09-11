@@ -42,6 +42,10 @@ export interface GlobalFilters {
   material: string;
   lot: string;
   status: "" | OrderStatus;
+  /** Id do turno ("" = todos). Usado pelas telas de performance. */
+  shiftId: string;
+  /** Dia operacional ("" = todos). Usado pelas telas de performance. */
+  operationalDay: string;
 }
 
 export const EMPTY_FILTERS: GlobalFilters = {
@@ -52,6 +56,8 @@ export const EMPTY_FILTERS: GlobalFilters = {
   material: "",
   lot: "",
   status: "",
+  shiftId: "",
+  operationalDay: "",
 };
 
 export function periodToRange(
@@ -444,6 +450,81 @@ export interface WorkSchedule {
   break_start: string | null;
   break_end: string | null;
   active: boolean;
+}
+
+// ---------------------------------------------------------- performance data
+
+export interface PerformanceTask {
+  id: number;
+  warehouse_task: string;
+  production_order: string | null;
+  material_code: string | null;
+  material_description: string | null;
+  lot: string | null;
+  quantity: number;
+  unit: string | null;
+  process_type: string;
+  task_status: string | null;
+  author: string | null;
+  creation_date: string | null;
+  creation_time: string | null;
+  confirmed_by: string | null;
+  confirmation_date: string | null;
+  confirmation_time: string | null;
+  pull_operator_id: number | null;
+  storage_operator_id: number | null;
+  pull_shift_id: number | null;
+  storage_shift_id: number | null;
+  operational_pull_day: string | null;
+  operational_storage_day: string | null;
+}
+
+/**
+ * Warehouse tasks with shift/operator classification within the filter range
+ * (matched on operational pull OR storage day). Used by the performance screens.
+ */
+export function usePerformanceTasks(filters: GlobalFilters) {
+  return useQuery({
+    queryKey: ["performance-tasks", filters],
+    queryFn: async () => {
+      const range = dateRangeOf(filters);
+      // PostgREST caps a response at 1000 rows; page through to fetch them all.
+      const pageSize = 1000;
+      const rows: PerformanceTask[] = [];
+      for (let from = 0; ; from += pageSize) {
+        let q = supabase
+          .from("warehouse_tasks")
+          .select(
+            "id,warehouse_task,production_order,material_code,material_description,lot,quantity,unit,process_type,task_status,author,creation_date,creation_time,confirmed_by,confirmation_date,confirmation_time,pull_operator_id,storage_operator_id,pull_shift_id,storage_shift_id,operational_pull_day,operational_storage_day",
+          )
+          .order("id", { ascending: true })
+          .range(from, from + pageSize - 1);
+        // Each or() composes with AND — day range and shift filter stay independent.
+        if (range.start && range.end) {
+          q = q.or(
+            `and(operational_pull_day.gte.${range.start},operational_pull_day.lte.${range.end}),and(operational_storage_day.gte.${range.start},operational_storage_day.lte.${range.end})`,
+          );
+        }
+        if (filters.shiftId) {
+          q = q.or(
+            `pull_shift_id.eq.${filters.shiftId},storage_shift_id.eq.${filters.shiftId}`,
+          );
+        }
+        if (filters.operationalDay) {
+          q = q.or(
+            `operational_pull_day.eq.${filters.operationalDay},operational_storage_day.eq.${filters.operationalDay}`,
+          );
+        }
+        const { data, error } = await q;
+        if (error) throw error;
+        const batch = (data ?? []) as unknown as PerformanceTask[];
+        rows.push(...batch);
+        if (batch.length < pageSize || from > 100_000) break;
+      }
+      return rows;
+    },
+    staleTime: 20_000,
+  });
 }
 
 export function useWorkSchedules() {

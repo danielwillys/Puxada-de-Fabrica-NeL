@@ -1,0 +1,17 @@
+-- Align operator shift assignments with actual work times observed in warehouse_tasks.
+-- IFERNANDES stores 685 tasks in 1o Turno hours -> T1
+-- DLOPES pulls 2305 tasks in 1o Turno hours -> T1
+-- JDESOUSA works 1o Turno hours -> T1
+-- AMSILVA pulls mostly 2o Turno hours -> T2
+-- DDASILVA pulls 2o Turno hours -> T2
+-- ROBORGES pulls 2o Turno hours -> T2
+update public.operator_shift_history
+set shift_id = 1
+where operator_id in (1, 6, 10);
+
+update public.operator_shift_history
+set shift_id = 3
+where operator_id in (12, 13, 14);
+
+-- Re-run classification with corrected assignments.
+select public.reprocess_shift_classification();

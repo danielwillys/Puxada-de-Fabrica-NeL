@@ -5,6 +5,7 @@ import {
   ClipboardList,
   Clock,
   FileUp,
+  Gauge,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -34,6 +35,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/ordens", label: "Ordens de Produção", icon: ClipboardList },
+  { to: "/performance", label: "Performance", icon: Gauge },
   { to: "/importacao", label: "Importação de Dados", icon: FileUp },
   { to: "/operadores", label: "Operadores", icon: Users },
   { to: "/turnos", label: "Turnos", icon: Clock },
