@@ -3945,6 +3945,15 @@ export type Database = {
       }
     }
     Functions: {
+      assign_operator_shift: {
+        Args: {
+          p_end_date?: string
+          p_operator_id: number
+          p_shift_id: number
+          p_start_date: string
+        }
+        Returns: string
+      }
       classify_warehouse_task_shifts: {
         Args: Record<PropertyKey, never>
         Returns: undefined

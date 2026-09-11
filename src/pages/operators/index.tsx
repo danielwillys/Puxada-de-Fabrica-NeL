@@ -125,14 +125,16 @@ export function OperatorsPage() {
 
   const saveAllocation = useMutation({
     mutationFn: async (data: AllocationForm) => {
-      const { error } = await supabase.from("operator_shift_history").insert({
-        operator_id: data.operatorId,
-        shift_id: data.shift_id ? Number(data.shift_id) : null,
-        start_date: data.start_date,
-        end_date: data.end_date || null,
-        active: true,
+      // Backend function closes the previous active allocation (if any) and
+      // registers the new one, preserving the history and blocking real conflicts.
+      const { data: result, error } = await supabase.rpc("assign_operator_shift", {
+        p_operator_id: data.operatorId,
+        p_shift_id: data.shift_id ? Number(data.shift_id) : null,
+        p_start_date: data.start_date,
+        p_end_date: data.end_date || null,
       });
       if (error) throw error;
+      if (result && result !== "ok") throw new Error(result);
     },
     onSuccess: () => {
       toast.success("Alocação de turno registrada.");
@@ -140,7 +142,11 @@ export function OperatorsPage() {
       invalidate();
     },
     onError: (e) =>
-      toast.error(e instanceof Error ? e.message : "Não foi possível registrar a alocação."),
+      toast.error(
+        typeof e === "object" && e !== null && "message" in e && (e as { message: string }).message
+          ? (e as { message: string }).message
+          : "Não foi possível registrar a alocação.",
+      ),
   });
 
   const openNew = () => {
@@ -380,8 +386,9 @@ export function OperatorsPage() {
           <DialogHeader>
             <DialogTitle>Alocar turno</DialogTitle>
             <DialogDescription>
-              Operador: <strong>{alloc?.operatorName}</strong>. Períodos conflitantes são
-              bloqueados pelo sistema.
+              Operador: <strong>{alloc?.operatorName}</strong>. Ao salvar, a alocação anterior
+              vigente é encerrada automaticamente no dia anterior ao novo início (histórico
+              preservado). Conflitos reais são bloqueados.
             </DialogDescription>
           </DialogHeader>
           {alloc ? (
