@@ -2,6 +2,7 @@ import { RotateCcw } from "lucide-react";
 import {
   PERIOD_OPTIONS,
   type GlobalFilters,
+  useShifts,
 } from "@/lib/queries";
 import { ORDER_STATUS_OPTIONS } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,8 @@ interface FilterBarProps {
   filters: GlobalFilters;
   onChange: (f: GlobalFilters) => void;
   className?: string;
+  /** Mostra os filtros de turno e dia operacional (telas de performance). */
+  showShiftFilters?: boolean;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -33,8 +36,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-export function FilterBar({ filters, onChange, className }: FilterBarProps) {
+export function FilterBar({ filters, onChange, className, showShiftFilters = false }: FilterBarProps) {
   const set = (patch: Partial<GlobalFilters>) => onChange({ ...filters, ...patch });
+  const shifts = useShifts();
 
   return (
     <div
@@ -82,6 +86,42 @@ export function FilterBar({ filters, onChange, className }: FilterBarProps) {
           onChange={(e) => set({ endDate: e.target.value })}
         />
       </Field>
+
+      {showShiftFilters ? (
+        <>
+          <Field label="Turno">
+            <Select
+              value={filters.shiftId || "todos"}
+              onValueChange={(v) =>
+                set({ shiftId: v === "todos" ? "" : v })
+              }
+            >
+              <SelectTrigger className="h-9 w-[160px]">
+                <SelectValue placeholder="Todos os turnos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos os turnos</SelectItem>
+                {(shifts.data ?? [])
+                  .filter((s) => s.active)
+                  .map((s) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.code} — {s.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field label="Dia operacional">
+            <Input
+              type="date"
+              className="h-9 w-[150px]"
+              value={filters.operationalDay}
+              onChange={(e) => set({ operationalDay: e.target.value })}
+            />
+          </Field>
+        </>
+      ) : null}
 
       <Field label="Ordem">
         <Input
@@ -145,6 +185,8 @@ export function FilterBar({ filters, onChange, className }: FilterBarProps) {
             material: "",
             lot: "",
             status: "",
+            shiftId: "",
+            operationalDay: "",
           })
         }
       >

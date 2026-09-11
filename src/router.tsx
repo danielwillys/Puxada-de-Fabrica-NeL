@@ -7,6 +7,7 @@ import { OrdersPage } from "@/pages/orders";
 import { OrderDetail } from "@/pages/orders/detail";
 import { ImportPage } from "@/pages/import";
 import { OperatorsPage } from "@/pages/operators";
+import { PerformancePage } from "@/pages/performance";
 import { ShiftsPage } from "@/pages/shifts";
 import { SchedulesPage } from "@/pages/schedules";
 import { SettingsPage } from "@/pages/settings";
@@ -55,6 +56,11 @@ export const routers = [
         path: "importacao",
         name: "importacao",
         element: <ImportPage />,
+      },
+      {
+        path: "performance",
+        name: "performance",
+        element: <PerformancePage />,
       },
       {
         path: "operadores",
