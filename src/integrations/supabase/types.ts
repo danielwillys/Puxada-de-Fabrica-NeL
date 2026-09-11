@@ -3645,30 +3645,43 @@ export type Database = {
       }
       profiles: {
         Row: {
+          active: boolean
           created_at: string
           email: string
           id: string
           name: string
           role: Database["public"]["Enums"]["user_role"]
+          role_id: number | null
           updated_at: string
         }
         Insert: {
+          active?: boolean
           created_at?: string
           email: string
           id: string
           name?: string
           role?: Database["public"]["Enums"]["user_role"]
+          role_id?: number | null
           updated_at?: string
         }
         Update: {
+          active?: boolean
           created_at?: string
           email?: string
           id?: string
           name?: string
           role?: Database["public"]["Enums"]["user_role"]
+          role_id?: number | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_role_id_fkey"
+            columns: ["role_id"]
+            referencedRelation: "user_roles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       shifts: {
         Row: {
@@ -3733,6 +3746,45 @@ export type Database = {
           key?: string
           updated_at?: string
           value?: Json
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          active: boolean
+          code: string
+          created_at: string
+          description: string | null
+          id: number
+          is_system: boolean
+          name: string
+          permissions: Json
+          role: Database["public"]["Enums"]["user_role"]
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          code: string
+          created_at?: string
+          description?: string | null
+          id?: number
+          is_system?: boolean
+          name: string
+          permissions?: Json
+          role?: Database["public"]["Enums"]["user_role"]
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          code?: string
+          created_at?: string
+          description?: string | null
+          id?: number
+          is_system?: boolean
+          name?: string
+          permissions?: Json
+          role?: Database["public"]["Enums"]["user_role"]
+          updated_at?: string
         }
         Relationships: []
       }
@@ -3964,9 +4016,17 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      current_user_permissions: {
+        Args: Record<PropertyKey, never>
+        Returns: string[]
+      }
       current_user_role: {
         Args: Record<PropertyKey, never>
         Returns: Database["public"]["Enums"]["user_role"]
+      }
+      current_user_role_name: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
       get_shift_for_datetime: {
         Args: { p_datetime: string; p_operator_id: number }

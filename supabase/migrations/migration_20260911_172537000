@@ -1,0 +1,29 @@
+-- Protege o perfil de sistema (Administrador): não pode ser alterado, desativado ou excluído.
+create or replace function public.protect_system_role()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if old.is_system then
+    if tg_op = 'DELETE' then
+      raise exception 'O perfil de sistema (Administrador) não pode ser excluído.';
+    end if;
+    if new.name is distinct from old.name
+       or new.description is distinct from old.description
+       or new.role is distinct from old.role
+       or new.permissions is distinct from old.permissions
+       or new.active is distinct from old.active
+       or new.code is distinct from old.code then
+      raise exception 'O perfil de sistema (Administrador) não pode ser alterado.';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists user_roles_protect_system on public.user_roles;
+create trigger user_roles_protect_system
+  before update or delete on public.user_roles
+  for each row execute function public.protect_system_role();

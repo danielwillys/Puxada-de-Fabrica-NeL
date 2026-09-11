@@ -11,6 +11,7 @@ import type {
   SapReconciliation,
   Shift,
   SystemSetting,
+  UserRole,
   WarehouseTask,
 } from "./types";
 import { toLocalDateString } from "./format";
@@ -538,5 +539,76 @@ export function useWorkSchedules() {
       if (error) throw error;
       return (data ?? []) as unknown as WorkSchedule[];
     },
+  });
+}
+
+// ------------------------------------------------------------- administração
+
+export interface UserAdminRow {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  role_id: number | null;
+  active: boolean;
+  role_name: string | null;
+}
+
+export function useAdminUsers() {
+  return useQuery({
+    queryKey: ["admin-users"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id,email,name,role,role_id,active,user_roles(id,name)")
+        .order("name", { ascending: true })
+        .limit(1000);
+      if (error) throw error;
+      return (data ?? []).map((r) => {
+        const row = r as {
+          id: string;
+          email: string;
+          name: string;
+          role: string;
+          role_id: number | null;
+          active: boolean;
+          user_roles: { id: number; name: string } | null;
+        };
+        return {
+          id: row.id,
+          email: row.email,
+          name: row.name,
+          role: row.role,
+          role_id: row.role_id,
+          active: row.active,
+          role_name: row.user_roles?.name ?? null,
+        } as UserAdminRow;
+      });
+    },
+    staleTime: 15_000,
+  });
+}
+
+export function useUserRoles() {
+  return useQuery({
+    queryKey: ["user-roles"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("*")
+        .order("is_system", { ascending: false })
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return (data ?? []).map((r) => {
+        const row = r as Record<string, unknown> & { permissions: unknown };
+        return {
+          ...row,
+          permissions: Array.isArray(row.permissions)
+            ? row.permissions.filter((p): p is string => typeof p === "string")
+            : [],
+        } as UserRole;
+      });
+    },
+    staleTime: 15_000,
   });
 }

@@ -1,7 +1,6 @@
 import { Navigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/app-layout";
 import { LoginPage } from "@/pages/auth/login";
-import { SignupPage } from "@/pages/auth/signup";
 import { FactoryPullDashboard } from "@/pages/dashboard/factory-pull";
 import { OrdersPage } from "@/pages/orders";
 import { OrderDetail } from "@/pages/orders/detail";
@@ -10,6 +9,8 @@ import { OperatorsPage } from "@/pages/operators";
 import { PerformancePage } from "@/pages/performance";
 import { ShiftsPage } from "@/pages/shifts";
 import { SchedulesPage } from "@/pages/schedules";
+import { UsersPage } from "@/pages/users";
+import { RolesPage } from "@/pages/roles";
 import { SettingsPage } from "@/pages/settings";
 import { AuditPage } from "@/pages/audit";
 import { RouteError } from "@/pages/route-error";
@@ -25,8 +26,7 @@ export const routers = [
   {
     path: "/signup",
     name: "signup",
-    element: <SignupPage />,
-    errorElement: <RouteError />,
+    element: <Navigate to="/login" replace />,
   },
   {
     path: "/",
@@ -76,6 +76,16 @@ export const routers = [
         path: "escalas",
         name: "escalas",
         element: <SchedulesPage />,
+      },
+      {
+        path: "usuarios",
+        name: "usuarios",
+        element: <UsersPage />,
+      },
+      {
+        path: "perfis",
+        name: "perfis",
+        element: <RolesPage />,
       },
       {
         path: "configuracoes",

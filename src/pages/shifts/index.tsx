@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Pencil, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/context/auth-context";
+import { useAuth, usePermission } from "@/context/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -56,6 +56,8 @@ const hhmm = (value: string | null | undefined) => (value ? value.slice(0, 5) : 
 export function ShiftsPage() {
   const { profile } = useAuth();
   const isAdmin = profile?.role === "admin";
+  const canReprocess = usePermission("shifts:reprocess");
+  const canManage = isAdmin || canReprocess;
   const shifts = useShifts();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -131,7 +133,7 @@ export function ShiftsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {isAdmin ? (
+          {isAdmin || canReprocess ? (
             <Button
               variant="outline"
               onClick={() => reprocess.mutate()}
@@ -201,7 +203,7 @@ export function ShiftsPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      {isAdmin ? (
+                      {isAdmin || canManage ? (
                         <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>
                           <Pencil className="h-4 w-4" />
                         </Button>

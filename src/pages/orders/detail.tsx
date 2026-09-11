@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/context/auth-context";
+import { useAuth, usePermission } from "@/context/auth-context";
 import { StatusBadge, TaskStatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -122,6 +122,8 @@ export function OrderDetail() {
   const { orderNumber = "" } = useParams();
   const { profile } = useAuth();
   const isAdmin = profile?.role === "admin";
+  const canReversal = usePermission("orders:reversal");
+  const canReversalAction = isAdmin || canReversal;
   const metrics = useOrderMetrics(orderNumber);
   const receipts = useOrderReceipts(orderNumber);
   const tasks = useOrderTasks(orderNumber);
@@ -435,7 +437,7 @@ export function OrderDetail() {
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    {isAdmin ? (
+                    {canReversalAction ? (
                       <Button
                         variant={r.is_valid ? "outline" : "ghost"}
                         size="sm"

@@ -16,7 +16,37 @@ export interface Profile {
   email: string;
   name: string;
   role: Role;
+  role_id: number | null;
+  active: boolean;
 }
+
+export interface UserRole {
+  id: number;
+  code: string;
+  name: string;
+  description: string | null;
+  role: Role;
+  permissions: string[];
+  is_system: boolean;
+  active: boolean;
+}
+
+/** Permissões disponíveis no sistema (chaves usadas nos perfis). */
+export const PERMISSIONS: { key: string; label: string; group: string }[] = [
+  { key: "dashboard", label: "Dashboard", group: "Módulos" },
+  { key: "orders", label: "Ordens de produção", group: "Módulos" },
+  { key: "performance", label: "Performance", group: "Módulos" },
+  { key: "import", label: "Importação de dados", group: "Módulos" },
+  { key: "operators", label: "Operadores", group: "Módulos" },
+  { key: "shifts", label: "Turnos", group: "Módulos" },
+  { key: "schedules", label: "Escalas", group: "Módulos" },
+  { key: "settings", label: "Configurações", group: "Módulos" },
+  { key: "audit", label: "Auditoria", group: "Módulos" },
+  { key: "users", label: "Usuários", group: "Administração" },
+  { key: "roles", label: "Perfis e permissões", group: "Administração" },
+  { key: "orders:reversal", label: "Estornar recebimentos", group: "Ações" },
+  { key: "shifts:reprocess", label: "Reprocessar classificação", group: "Ações" },
+];
 
 export interface ProductionOrderMetric {
   id: number;
