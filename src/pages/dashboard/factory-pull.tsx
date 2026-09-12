@@ -51,11 +51,13 @@ import { fmtDateTime, fmtInt, fmtPercent, fmtQty } from "@/lib/format";
 import { ORDER_STATUS_META, type ProductionOrderMetric } from "@/lib/types";
 
 const C = {
-  primary: "#2563eb",
-  success: "#16a34a",
-  warning: "#f59e0b",
-  danger: "#dc2626",
+  // Paleta N&L: vermelho vivo, azul marinho, verde e amarelo de status do BI
+  primary: "#CE1E29",
+  success: "#44CE55",
+  warning: "#E1C333",
+  danger: "#A22E2E",
   muted: "#94a3b8",
+  navy: "#0F245B",
 };
 
 interface DayPoint {
