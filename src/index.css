@@ -24,9 +24,9 @@
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
 
-    /* Azul marinho N&L #0F245B — acento / cabeçalhos */
-    --accent: 223 72% 21%;
-    --accent-foreground: 0 0% 100%;
+    /* Acento claro para hovers no modo claro (o azul escuro fica só na sidebar) */
+    --accent: 223 55% 94%;
+    --accent-foreground: 223 47.4% 11.2%;
 
     --destructive: 356 60% 40%;
     --destructive-foreground: 0 0% 100%;
@@ -47,14 +47,14 @@
 
     --radius: 0.5rem;
 
-    /* Azul marinho N&L — sidebar */
-    --sidebar-background: 223 72% 18%;
-    --sidebar-foreground: 213 25% 88%;
+    /* Azul marinho escuro N&L (padrão do BI) — sidebar e cabeçalhos */
+    --sidebar-background: 215 38% 15%;
+    --sidebar-foreground: 209 24% 72%;
     --sidebar-primary: 356 75% 52%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 223 60% 26%;
+    --sidebar-accent: 214 32% 22%;
     --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 223 55% 24%;
+    --sidebar-border: 214 30% 24%;
     --sidebar-ring: 356 75% 52%;
   }
 
@@ -96,13 +96,13 @@
     --input: 217.2 32.6% 17.5%;
     --ring: 356 75% 55%;
 
-    --sidebar-background: 223 72% 12%;
-    --sidebar-foreground: 213 25% 88%;
+    --sidebar-background: 215 38% 12%;
+    --sidebar-foreground: 209 24% 72%;
     --sidebar-primary: 356 75% 52%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 223 60% 22%;
+    --sidebar-accent: 214 32% 18%;
     --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 223 55% 20%;
+    --sidebar-border: 214 30% 20%;
     --sidebar-ring: 356 75% 52%;
   }
 }
