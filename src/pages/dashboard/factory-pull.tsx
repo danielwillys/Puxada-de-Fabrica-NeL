@@ -45,7 +45,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useImports, useMetrics, useReconciliation, useReversedReceipts, type GlobalFilters } from "@/lib/queries";
+import { useDailyPulled, useImports, useMetrics, useReconciliation, useReversedReceipts, type GlobalFilters } from "@/lib/queries";
 import { useFilters } from "@/context/filters-context";
 import { fmtDateTime, fmtInt, fmtPercent, fmtQty } from "@/lib/format";
 import { ORDER_STATUS_META, type ProductionOrderMetric } from "@/lib/types";
@@ -186,6 +186,7 @@ export function FactoryPullDashboard() {
   const reconciliation = useReconciliation(debounced);
   const imports = useImports();
   const reversed = useReversedReceipts(debounced);
+  const dailyPulled = useDailyPulled(debounced);
 
   const rows = useMemo(() => metrics.data ?? [], [metrics.data]);
   const hasAnyImport = (imports.data?.length ?? 0) > 0;
@@ -196,6 +197,24 @@ export function FactoryPullDashboard() {
       qty: reversedRows.reduce((a, r) => a + r.quantity, 0),
     }),
     [reversedRows],
+  );
+
+  /** Puxado físico por dia = base Recebimento (production_receipts), por data do recebimento. */
+  const pulledByDay = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of dailyPulled.data ?? []) {
+      const day = r.goods_receipt_date ?? "sem data";
+      map.set(day, (map.get(day) ?? 0) + r.quantity);
+    }
+    return [...map.entries()]
+      .map(([day, pulled]) => ({ day, pulled }))
+      .sort((a, b) => a.day.localeCompare(b.day));
+  }, [dailyPulled.data]);
+
+  /** Total puxado pela base de recebimento (soma de todas as entradas válidas). */
+  const totalPulledBase = useMemo(
+    () => (dailyPulled.data ?? []).reduce((a, r) => a + r.quantity, 0),
+    [dailyPulled.data],
   );
 
   const totals = useMemo(() => {
@@ -415,7 +434,12 @@ export function FactoryPullDashboard() {
             />
             <KpiCard label="Qtd. planejada" value={fmtQty(totals.planned)} icon={Package} />
             <KpiCard label="Qtd. produzida" value={fmtQty(totals.produced)} icon={Factory} />
-            <KpiCard label="Qtd. puxada" value={fmtQty(totals.pulled)} icon={Boxes} tone="info" />
+            <KpiCard
+              label="Qtd. puxada (Recebimento)"
+              value={fmtQty(totalPulledBase)}
+              icon={Boxes}
+              tone="info"
+            />
             <KpiCard
               label="Recebimentos estornados"
               value={fmtInt(reversedStats.count)}
@@ -518,12 +542,10 @@ export function FactoryPullDashboard() {
 
             <ChartCard
               title="Puxado físico por dia"
-              sub="Quantidade de caixas puxadas (base Recebimento), por dia de início real da ordem"
+              sub="Quantidade de caixas recebidas (base Recebimento), por data de recebimento"
             >
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={dayPoints.map((p) => ({ day: p.day, pulled: p.pulled }))}
-                >
+                <AreaChart data={pulledByDay}>
                   <defs>
                     <linearGradient id="gradPulled" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={C.success} stopOpacity={0.35} />

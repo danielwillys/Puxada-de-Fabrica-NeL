@@ -412,9 +412,16 @@ Deno.serve(async (req) => {
       const toInsert = existenceUnknown
         ? []
         : validRows.filter((r) => !existingKeys.has(keyOf(r)));
-      const toUpdate = existenceUnknown
-        ? validRows
-        : validRows.filter((r) => existingKeys.has(keyOf(r)));
+      // Recebimentos já existentes NÃO são atualizados: preserva estornos
+      // (is_valid = false) e qualquer edição feita no sistema. A reimportação
+      // apenas insere documentos ainda não registrados. MON e COOISPI seguem
+      // com upsert (atualização de status/datas).
+      const toUpdate =
+        fileType === "recebimento"
+          ? []
+          : existenceUnknown
+            ? validRows
+            : validRows.filter((r) => existingKeys.has(keyOf(r)));
 
       for (const batch of chunk(toInsert, 500)) {
         const { error: insErr } = await supabase.from(table).insert(batch);
