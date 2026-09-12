@@ -221,6 +221,39 @@ export function useDailyPulled(filters: GlobalFilters) {
   });
 }
 
+/** Recebimentos estornados (is_valid = false) no período — para o card de controle. */
+export function useReversedReceipts(filters: GlobalFilters) {
+  return useQuery({
+    queryKey: ["reversed-receipts", filters],
+    queryFn: async () => {
+      const range = dateRangeOf(filters);
+      let q = supabase
+        .from("production_receipts")
+        .select("id,document_number,production_order,material_code,lot,quantity,unit,reversal_reason,reversed_at")
+        .eq("is_valid", false);
+      if (range.start && range.end) {
+        q = q
+          .gte("reversed_at", `${range.start}T00:00:00`)
+          .lte("reversed_at", `${range.end}T23:59:59`);
+      }
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as unknown as {
+        id: number;
+        document_number: string;
+        production_order: string | null;
+        material_code: string;
+        lot: string | null;
+        quantity: number;
+        unit: string | null;
+        reversal_reason: string | null;
+        reversed_at: string | null;
+      }[];
+    },
+    staleTime: 20_000,
+  });
+}
+
 export interface OrdersPageParams {
   filters: GlobalFilters;
   search: string;

@@ -9,6 +9,7 @@ import {
   Factory,
   Inbox,
   Package,
+  RotateCcw,
   Scale,
   Timer,
   TrendingUp,
@@ -36,9 +37,17 @@ import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useImports, useMetrics, useReconciliation, type GlobalFilters } from "@/lib/queries";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useImports, useMetrics, useReconciliation, useReversedReceipts, type GlobalFilters } from "@/lib/queries";
 import { useFilters } from "@/context/filters-context";
-import { fmtInt, fmtPercent, fmtQty } from "@/lib/format";
+import { fmtDateTime, fmtInt, fmtPercent, fmtQty } from "@/lib/format";
 import { ORDER_STATUS_META, type ProductionOrderMetric } from "@/lib/types";
 
 const C = {
@@ -51,38 +60,61 @@ const C = {
 
 interface DayPoint {
   day: string;
+  /** Planejado: quantidade da ordem, agrupada pela Data-base iníc. (planned_start). */
   planned: number;
+  /** Apontado/produzido: Quantidade boa confirmada (GMEIN), agrupada pela Data início real. */
   produced: number;
+  /** Puxado: base Recebimento (soma das entradas físicas válidas). */
   pulled: number;
+  /** Pendente puxada: Puxado - Quantidade apontada (o que falta puxar do que foi produzido). */
+  pending: number;
+  /** Saldo por dia: backlog do produzido ainda não puxado (GMEIN - Recebimento). */
   balance: number;
   efficiency: number;
 }
 
+function dayRef(value: string | null, fallback: string | null): string {
+  return (value ?? fallback ?? "").slice(0, 10) || "sem data";
+}
+
 function buildDayPoints(rows: ProductionOrderMetric[]): DayPoint[] {
   const map = new Map<string, DayPoint>();
-  for (const r of rows) {
-    // Referência de dia: data real de início (actual_start). Quando não houver,
-    // usa a data de criação como fallback.
-    const day = (r.actual_start ?? r.created_date ?? "").slice(0, 10) || "sem data";
-    const p = map.get(day) ?? {
+  const add = (day: string, patch: Partial<DayPoint>) => {
+    const cur = map.get(day) ?? {
       day,
       planned: 0,
       produced: 0,
       pulled: 0,
+      pending: 0,
       balance: 0,
       efficiency: 0,
     };
-    p.planned += r.planned_quantity;
-    p.produced += r.confirmed_quantity;
-    p.pulled += r.pulled_quantity;
-    p.balance += r.balance_quantity;
-    map.set(day, p);
+    map.set(day, { ...cur, ...patch });
+  };
+
+  for (const r of rows) {
+    // Planejado no dia da Data-base iníc.; produzido/apontado no dia do início real.
+    const plannedDay = dayRef(r.planned_start, r.created_date);
+    add(plannedDay, {
+      planned: (map.get(plannedDay)?.planned ?? 0) + r.planned_quantity,
+    });
+    const prodDay = dayRef(r.actual_start, r.created_date);
+    const produced = r.confirmed_quantity;
+    const pulled = r.pulled_quantity;
+    add(prodDay, {
+      produced: (map.get(prodDay)?.produced ?? 0) + produced,
+      pulled: (map.get(prodDay)?.pulled ?? 0) + pulled,
+      // Pendente puxada = produzido (GMEIN) ainda não puxado (Recebimento).
+      pending: (map.get(prodDay)?.pending ?? 0) + Math.max(0, produced - pulled),
+      balance: (map.get(prodDay)?.balance ?? 0) + Math.max(0, produced - pulled),
+    });
   }
+
   return [...map.values()]
     .map((p) => ({
       ...p,
       efficiency:
-        p.planned > 0 ? Math.min(100, Math.round((p.pulled / p.planned) * 100)) : 0,
+        p.produced > 0 ? Math.min(100, Math.round((p.pulled / p.produced) * 100)) : 0,
     }))
     .sort((a, b) => a.day.localeCompare(b.day));
 }
@@ -151,9 +183,18 @@ export function FactoryPullDashboard() {
   const metrics = useMetrics(debounced);
   const reconciliation = useReconciliation(debounced);
   const imports = useImports();
+  const reversed = useReversedReceipts(debounced);
 
   const rows = useMemo(() => metrics.data ?? [], [metrics.data]);
   const hasAnyImport = (imports.data?.length ?? 0) > 0;
+  const reversedRows = useMemo(() => reversed.data ?? [], [reversed.data]);
+  const reversedStats = useMemo(
+    () => ({
+      count: reversedRows.length,
+      qty: reversedRows.reduce((a, r) => a + r.quantity, 0),
+    }),
+    [reversedRows],
+  );
 
   const totals = useMemo(() => {
     const t = {
@@ -178,14 +219,18 @@ export function FactoryPullDashboard() {
       t.planned += r.planned_quantity;
       t.produced += r.confirmed_quantity;
       t.pulled += r.pulled_quantity;
-      t.balance += r.balance_quantity;
+      // Saldo = produzido (apontado) ainda não puxado (base Recebimento).
+      t.balance += Math.max(0, r.confirmed_quantity - r.pulled_quantity);
       t.excessQty += r.excess_quantity;
       t.required += r.required_quantity;
     }
     return t;
   }, [rows]);
 
-  const efficiency = totals.required > 0 ? Math.min(100, (totals.pulled / totals.required) * 100) : 0;
+  const efficiency =
+    totals.produced > 0
+      ? Math.min(100, (totals.pulled / totals.produced) * 100)
+      : 0;
 
   const reconciliationStats = useMemo(() => {
     const rowsR = reconciliation.data ?? [];
@@ -364,12 +409,25 @@ export function FactoryPullDashboard() {
               label="Eficiência de puxada"
               value={fmtPercent(efficiency)}
               icon={TrendingUp}
-              sub="Puxado físico ÷ exigido"
+              sub="Puxado físico ÷ produzido (GMEIN)"
             />
             <KpiCard label="Qtd. planejada" value={fmtQty(totals.planned)} icon={Package} />
             <KpiCard label="Qtd. produzida" value={fmtQty(totals.produced)} icon={Factory} />
             <KpiCard label="Qtd. puxada" value={fmtQty(totals.pulled)} icon={Boxes} tone="info" />
-            <KpiCard label="Saldo a puxar" value={fmtQty(totals.balance)} icon={Timer} tone="warning" />
+            <KpiCard
+              label="Recebimentos estornados"
+              value={fmtInt(reversedStats.count)}
+              icon={RotateCcw}
+              tone={reversedStats.count > 0 ? "danger" : "success"}
+              sub={reversedStats.qty > 0 ? `${fmtQty(reversedStats.qty)} qtd` : "nenhum"}
+            />
+            <KpiCard
+              label="Saldo a puxar"
+              value={fmtQty(totals.balance)}
+              icon={Timer}
+              tone="warning"
+              sub="Produzido (GMEIN) − puxado (Recebimento)"
+            />
             <KpiCard label="Excesso" value={fmtQty(totals.excessQty)} icon={AlertTriangle} tone="danger" />
             <KpiCard
               label="Divergência SAP × físico"
@@ -381,7 +439,10 @@ export function FactoryPullDashboard() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <ChartCard title="Planejado × Produzido × Puxado" sub="Por dia real de início da ordem">
+            <ChartCard
+              title="Planejado × Apontado × Puxado × Pendente"
+              sub="Planejado (Data-base iníc.) · Apontado/produzido (início real) · Puxado (Recebimento) · Pendente"
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dayPoints}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -390,13 +451,17 @@ export function FactoryPullDashboard() {
                   <Tooltip {...CHART_TOOLTIP} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="planned" name="Planejado" fill={C.muted} radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="produced" name="Produzido" fill={C.primary} radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="pulled" name="Puxado" fill={C.success} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="produced" name="Apontado (produzido)" fill={C.primary} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="pulled" name="Puxado (Recebimento)" fill={C.success} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="pending" name="Pendente puxada" fill={C.danger} radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
 
-            <ChartCard title="Eficiência ao longo do tempo" sub="Eficiência diária (%). Máx. 100%">
+            <ChartCard
+              title="Eficiência ao longo do tempo"
+              sub="Puxado (Recebimento) ÷ produzido (GMEIN) por dia. Máx. 100%"
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={dayPoints}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -422,7 +487,10 @@ export function FactoryPullDashboard() {
               </ResponsiveContainer>
             </ChartCard>
 
-            <ChartCard title="Saldo a puxar por dia" sub="Saldo acumulado das ordens do período">
+            <ChartCard
+              title="Saldo a puxar por dia"
+              sub="Backlog: produzido (GMEIN) ainda não puxado (Recebimento), por dia de início real"
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dayPoints}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -446,7 +514,10 @@ export function FactoryPullDashboard() {
               </ResponsiveContainer>
             </ChartCard>
 
-            <ChartCard title="Puxado físico por dia" sub="Soma das entradas físicas válidas (Recebimento)">
+            <ChartCard
+              title="Puxado físico por dia"
+              sub="Quantidade de caixas puxadas (base Recebimento), por dia de início real da ordem"
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
                   data={dayPoints.map((p) => ({ day: p.day, pulled: p.pulled }))}
@@ -574,6 +645,47 @@ export function FactoryPullDashboard() {
               </div>
             </Card>
           </div>
+
+          <Card className="p-4">
+            <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
+              <RotateCcw className="h-4 w-4 text-danger" /> Recebimentos estornados
+              <Badge variant="danger">{fmtInt(reversedStats.count)}</Badge>
+            </p>
+            {reversedRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Nenhum recebimento estornado no período.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Documento</TableHead>
+                      <TableHead>Ordem</TableHead>
+                      <TableHead>Material</TableHead>
+                      <TableHead>Lote</TableHead>
+                      <TableHead className="text-right">Qtd.</TableHead>
+                      <TableHead>Motivo</TableHead>
+                      <TableHead>Data do estorno</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reversedRows.slice(0, 50).map((r) => (
+                      <TableRow key={r.id}>
+                        <TableCell className="font-medium">{r.document_number}</TableCell>
+                        <TableCell>{r.production_order ?? "—"}</TableCell>
+                        <TableCell>{r.material_code}</TableCell>
+                        <TableCell>{r.lot ?? "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{fmtQty(r.quantity)}</TableCell>
+                        <TableCell>{r.reversal_reason ?? "—"}</TableCell>
+                        <TableCell>{fmtDateTime(r.reversed_at)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </Card>
         </>
       )}
     </div>
