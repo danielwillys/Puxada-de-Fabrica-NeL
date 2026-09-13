@@ -173,7 +173,7 @@ export function OrdersPage() {
         </p>
       </div>
 
-      <FilterBar filters={filters} onChange={setFilters} />
+      <FilterBar filters={filters} onChange={setFilters} showOpenTasks />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full max-w-xs">
