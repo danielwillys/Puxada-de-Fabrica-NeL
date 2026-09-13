@@ -3,6 +3,7 @@ import { ArrowDownToLine, ArrowUpFromLine, Timer } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { InfoPopover } from "@/components/info-popover";
 import {
   Table,
   TableBody,
@@ -141,12 +142,34 @@ export function OperatorPerformanceView({ filters }: { filters: GlobalFilters })
       </div>
 
       <Card className="p-4">
-        <p className="mb-3 text-sm font-semibold">
-          Desempenho por operador
-          <span className="ml-2 text-xs font-normal text-muted-foreground">
-            Puxadas (1020, autor) e armazenagens (1012, confirmado por) — separadas
-          </span>
-        </p>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold">
+            Desempenho por operador
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              Puxadas (1020, autor) e armazenagens (1012, confirmado por) — separadas
+            </span>
+          </p>
+          <InfoPopover
+            title="Como o nível de serviço é medido por operador"
+            items={[
+              {
+                term: "Tempo médio / P90",
+                definition:
+                  "Só existem para operadores que puxam paletes com armazenagem posterior. Cada palete é pareado (FIFO por lote) e o tempo é a diferença entre puxada e armazenagem. Quem só puxa no dia não tem par completo, então fica '—'.",
+              },
+              {
+                term: "% SLA do operador",
+                definition:
+                  "Percentual dos paletes puxados pelo operador que foram armazenados dentro do tempo alvo (30 min). Se ele só puxa e outro armazena, o SLA é atribuído ao operador que puxou, medindo o fluxo do palete.",
+              },
+              {
+                term: "Por que alguns aparecem '—'",
+                definition:
+                  "Sem pares puxada→armazenagem completos no período, não há como calcular tempo médio, P90 ou SLA — isso é normal para quem só fez puxadas ou só armazenagens no período.",
+              },
+            ]}
+          />
+        </div>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>

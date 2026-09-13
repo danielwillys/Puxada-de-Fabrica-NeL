@@ -88,7 +88,8 @@ export function periodToRange(
     }
     case "month": {
       const s = new Date(today.getFullYear(), today.getMonth(), 1);
-      const e = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      // Limita ao dia atual: não mostrar dias que ainda não chegaram.
+      const e = today;
       return { start: to(s), end: to(e) };
     }
     case "prevMonth": {
@@ -172,6 +173,7 @@ export function useMetrics(filters: GlobalFilters) {
       return (data ?? []) as unknown as ProductionOrderMetric[];
     },
     staleTime: 20_000,
+    placeholderData: (prev: ProductionOrderMetric[] | undefined) => prev,
   });
 }
 
@@ -536,7 +538,13 @@ export function usePerformanceTasks(filters: GlobalFilters) {
           .order("id", { ascending: true })
           .range(from, from + pageSize - 1);
         // Each or() composes with AND — day range and shift filter stay independent.
-        if (range.start && range.end) {
+        // Quando um dia operacional é selecionado, ele é a restrição mais específica:
+        // filtra estritamente as tarefas daquele dia (sem arrastar dias vizinhos).
+        if (filters.operationalDay) {
+          q = q.or(
+            `and(process_type.eq.1020,operational_pull_day.eq.${filters.operationalDay}),and(process_type.eq.1012,operational_storage_day.eq.${filters.operationalDay})`,
+          );
+        } else if (range.start && range.end) {
           q = q.or(
             `and(operational_pull_day.gte.${range.start},operational_pull_day.lte.${range.end}),and(operational_storage_day.gte.${range.start},operational_storage_day.lte.${range.end})`,
           );
@@ -544,11 +552,6 @@ export function usePerformanceTasks(filters: GlobalFilters) {
         if (filters.shiftId) {
           q = q.or(
             `pull_shift_id.eq.${filters.shiftId},storage_shift_id.eq.${filters.shiftId}`,
-          );
-        }
-        if (filters.operationalDay) {
-          q = q.or(
-            `operational_pull_day.eq.${filters.operationalDay},operational_storage_day.eq.${filters.operationalDay}`,
           );
         }
         const { data, error } = await q;

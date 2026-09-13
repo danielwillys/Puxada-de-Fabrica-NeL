@@ -23,6 +23,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { InfoPopover } from "@/components/info-popover";
 import {
   Table,
   TableBody,
@@ -84,7 +85,29 @@ function ShiftCard({ s, index }: { s: ShiftSummary; index: number }) {
             <p className="text-xs text-muted-foreground">{s.code}</p>
           </div>
         </div>
-        {s.pulls + s.stores === 0 ? <Badge variant="neutral">Sem dados</Badge> : null}
+        <div className="flex items-center gap-1">
+          {s.pulls + s.stores === 0 ? <Badge variant="neutral">Sem dados</Badge> : null}
+          <InfoPopover
+            title="Métricas deste card"
+            items={[
+              {
+                term: "Tempo médio",
+                definition:
+                  "Média do tempo entre a puxada (tarefa 1020) e a armazenagem (tarefa 1012) de cada palete, pareados por lote. Não é 'tempo total ÷ produtividade'.",
+              },
+              {
+                term: "P90",
+                definition:
+                  "Percentil 90: o tempo em que 90% dos paletes foram armazenados. Ex.: P90 de 45 min significa que 90% dos paletes levaram até 45 min entre puxar e armazenar.",
+              },
+              {
+                term: "% SLA",
+                definition:
+                  "Percentual de paletes armazenados dentro do tempo alvo configurável (hoje 30 min). Um operador que só puxa não gera pares puxada→armazenagem, então não tem tempo médio/P90/SLA.",
+              },
+            ]}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">

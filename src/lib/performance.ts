@@ -157,7 +157,54 @@ export function buildShiftSummaries(
     minutesByShift.set(pr.pullShiftId, arr);
   }
 
-  return shifts.map((s) => {
+  // Grupo "Sem turno": tarefas que existem no período mas não caem na janela de
+  // nenhum turno (operador sem alocação vigente ou horário fora do turno).
+  const unshifted: ShiftSummary = {
+    shiftId: null,
+    code: "SEM TURNO",
+    name: "Sem turno (não classificado)",
+    pulls: 0,
+    pullQty: 0,
+    stores: 0,
+    storeQty: 0,
+    openTasks: 0,
+    waitingTasks: 0,
+    reversedTasks: 0,
+    confirmedTasks: 0,
+    pairs: 0,
+    avgMinutes: null,
+    p90Minutes: null,
+    slaPct: null,
+    slaMinutes,
+    daily: [],
+  };
+  const unshiftedDaily = new Map<string, DailyPoint>();
+  for (const t of tasks) {
+    if (t.process_type === "1020" && t.pull_shift_id === null) {
+      unshifted.pulls += 1;
+      unshifted.pullQty += t.quantity;
+      if ((t.task_status ?? "") === "") unshifted.openTasks += 1;
+      if (t.task_status === "B") unshifted.waitingTasks += 1;
+      if (t.task_status === "A") unshifted.reversedTasks += 1;
+      if (t.task_status === "C") unshifted.confirmedTasks += 1;
+      const day = t.operational_pull_day ?? "sem dia";
+      pushDaily(unshiftedDaily, day, {
+        pulls: (unshiftedDaily.get(day)?.pulls ?? 0) + 1,
+        pullQty: (unshiftedDaily.get(day)?.pullQty ?? 0) + t.quantity,
+      });
+    } else if (t.process_type === "1012" && t.storage_shift_id === null) {
+      unshifted.stores += 1;
+      unshifted.storeQty += t.quantity;
+      const day = t.operational_storage_day ?? "sem dia";
+      pushDaily(unshiftedDaily, day, {
+        stores: (unshiftedDaily.get(day)?.stores ?? 0) + 1,
+        storeQty: (unshiftedDaily.get(day)?.storeQty ?? 0) + t.quantity,
+      });
+    }
+  }
+  unshifted.daily = [...unshiftedDaily.values()].sort((a, b) => a.day.localeCompare(b.day));
+
+  const result = shifts.map((s) => {
     const id = s.id;
     const pulls = tasks.filter((t) => t.process_type === "1020" && t.pull_shift_id === id);
     const stores = tasks.filter((t) => t.process_type === "1012" && t.storage_shift_id === id);
@@ -205,6 +252,10 @@ export function buildShiftSummaries(
       daily,
     };
   });
+
+  // Inclui o grupo "Sem turno" ao final, somente se houver tarefas nele.
+  if (unshifted.pulls > 0 || unshifted.stores > 0) result.push(unshifted);
+  return result;
 }
 
 export function buildBacklogByShift(
