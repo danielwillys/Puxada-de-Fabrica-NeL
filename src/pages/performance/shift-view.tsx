@@ -93,7 +93,7 @@ function ShiftCard({ s, index }: { s: ShiftSummary; index: number }) {
               {
                 term: "Tempo médio",
                 definition:
-                  "Média do tempo entre a puxada (tarefa 1020) e a armazenagem (tarefa 1012) de cada palete, pareados por lote. Não é 'tempo total ÷ produtividade'.",
+                  "Média do tempo entre a puxada e a armazenagem de cada palete. Não é 'tempo total ÷ produtividade'.",
               },
               {
                 term: "P90",

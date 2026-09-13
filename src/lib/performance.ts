@@ -206,8 +206,13 @@ export function buildShiftSummaries(
 
   const result = shifts.map((s) => {
     const id = s.id;
-    const pulls = tasks.filter((t) => t.process_type === "1020" && t.pull_shift_id === id);
-    const stores = tasks.filter((t) => t.process_type === "1012" && t.storage_shift_id === id);
+    // Tarefas estornadas (status A) não entram nas contagens de produção.
+    const pulls = tasks.filter(
+      (t) => t.process_type === "1020" && t.pull_shift_id === id && t.task_status !== "A",
+    );
+    const stores = tasks.filter(
+      (t) => t.process_type === "1012" && t.storage_shift_id === id && t.task_status !== "A",
+    );
     const dailyMap = new Map<string, DailyPoint>();
     for (const t of pulls) {
       const day = t.operational_pull_day ?? "sem dia";

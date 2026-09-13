@@ -146,7 +146,7 @@ export function OperatorPerformanceView({ filters }: { filters: GlobalFilters })
           <p className="text-sm font-semibold">
             Desempenho por operador
             <span className="ml-2 text-xs font-normal text-muted-foreground">
-              Puxadas (1020, autor) e armazenagens (1012, confirmado por) — separadas
+              Puxadas e armazenagens contadas separadamente por operador
             </span>
           </p>
           <InfoPopover
@@ -155,7 +155,7 @@ export function OperatorPerformanceView({ filters }: { filters: GlobalFilters })
               {
                 term: "Tempo médio / P90",
                 definition:
-                  "Só existem para operadores que puxam paletes com armazenagem posterior. Cada palete é pareado (FIFO por lote) e o tempo é a diferença entre puxada e armazenagem. Quem só puxa no dia não tem par completo, então fica '—'.",
+                  "Só existem para operadores que puxam paletes que depois são armazenados. O tempo é medido do início da puxada até a armazenagem. Quem só puxa no dia não tem esse tempo completo, então fica '—'.",
               },
               {
                 term: "% SLA do operador",

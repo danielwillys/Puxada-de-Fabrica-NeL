@@ -164,17 +164,20 @@ function RankList({
   icon,
   rows,
   render,
+  help,
 }: {
   title: string;
   icon: React.ReactNode;
   rows: { key: string; label: string; value: number; unit?: string }[];
   render: (r: { key: string; label: string; value: number; unit?: string }) => React.ReactNode;
+  help?: { title: string; items: { term: string; definition: string }[] };
 }) {
   return (
     <Card className="flex flex-col p-4">
       <div className="mb-3 flex items-center gap-2">
         <span className="text-primary">{icon}</span>
         <p className="text-sm font-semibold">{title}</p>
+        {help ? <InfoPopover title={help.title} items={help.items} className="ml-auto" /> : null}
       </div>
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">Sem dados no período.</p>
@@ -183,6 +186,29 @@ function RankList({
           {rows.map((r) => render(r))}
         </div>
       )}
+    </Card>
+  );
+}
+
+/** Card simples com título + ícone e botão de ajuda opcional. */
+function InfoCard({
+  title,
+  help,
+  children,
+  className,
+}: {
+  title: string;
+  help?: { title: string; items: { term: string; definition: string }[] };
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Card className={`flex flex-col gap-2 p-4 ${className ?? ""}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold">{title}</p>
+        {help ? <InfoPopover title={help.title} items={help.items} className="shrink-0" /> : null}
+      </div>
+      {children}
     </Card>
   );
 }
@@ -601,7 +627,25 @@ export function FactoryPullDashboard() {
               </ResponsiveContainer>
             </ChartCard>
 
-            <ChartCard title="Excesso por material" sub="Top 10 materiais com maior excesso">
+            <ChartCard
+              title="Excesso por material"
+              sub="Top 10 materiais com maior excesso"
+              help={{
+                title: "Excesso por material",
+                items: [
+                  {
+                    term: "Definição",
+                    definition:
+                      "Quantidade puxada que ultrapassou o necessário da ordem (puxado − exigido). Indica material recebido a mais que o previsto.",
+                  },
+                  {
+                    term: "Onde agir",
+                    definition:
+                      "Materiais no topo concentram o maior volume de excesso e são os candidatos naturais a estorno/revisão.",
+                  },
+                ],
+              }}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={excessByMaterial} layout="vertical" margin={{ left: 30 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -655,6 +699,16 @@ export function FactoryPullDashboard() {
               title="Top ordens com maior saldo"
               icon={<Timer className="h-4 w-4" />}
               rows={topBalanceOrders.map((r) => ({ key: r.order_number, label: r.order_number, value: r.balance_quantity }))}
+              help={{
+                title: "Top ordens com maior saldo",
+                items: [
+                  {
+                    term: "Definição",
+                    definition:
+                      "Ordens com maior quantidade produzida ainda não puxada (produzido − puxado). Priorize estas para reduzir o backlog.",
+                  },
+                ],
+              }}
               render={(r) => (
                 <Link
                   key={r.key}
@@ -670,6 +724,16 @@ export function FactoryPullDashboard() {
               title="Top materiais com maior saldo"
               icon={<Package className="h-4 w-4" />}
               rows={topBalanceMaterials}
+              help={{
+                title: "Top materiais com maior saldo",
+                items: [
+                  {
+                    term: "Definição",
+                    definition:
+                      "Materiais com maior volume produzido e ainda não puxado, somando todas as ordens do período.",
+                  },
+                ],
+              }}
               render={(r) => (
                 <div key={r.key} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                   <span className="truncate font-medium">{r.label}</span>
@@ -681,6 +745,16 @@ export function FactoryPullDashboard() {
               title="Top ordens com maior excesso"
               icon={<AlertTriangle className="h-4 w-4" />}
               rows={topExcessOrders.map((r) => ({ key: r.order_number, label: r.order_number, value: r.excess_quantity }))}
+              help={{
+                title: "Top ordens com maior excesso",
+                items: [
+                  {
+                    term: "Definição",
+                    definition:
+                      "Ordens com maior quantidade puxada acima do exigido. Úteis para identificar onde houve recebimento a mais.",
+                  },
+                ],
+              }}
               render={(r) => (
                 <Link
                   key={r.key}
@@ -695,8 +769,30 @@ export function FactoryPullDashboard() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <Card className="flex flex-col gap-2 p-4">
-              <p className="text-sm font-semibold">Ordens por status</p>
+            <InfoCard
+              title="Ordens por status"
+              help={{
+                title: "Ordens por status",
+                items: [
+                  {
+                    term: "Não iniciada",
+                    definition: "Nenhuma caixa puxada ainda para a ordem.",
+                  },
+                  {
+                    term: "Em andamento",
+                    definition: "Já houve puxada, mas ainda falta para atingir o exigido.",
+                  },
+                  {
+                    term: "Finalizada",
+                    definition: "A quantidade puxada atingiu exatamente o exigido.",
+                  },
+                  {
+                    term: "Excesso",
+                    definition: "Foi puxado mais do que o exigido para a ordem.",
+                  },
+                ],
+              }}
+            >
               <div className="flex flex-col gap-1.5 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-2 text-muted-foreground">
@@ -727,11 +823,21 @@ export function FactoryPullDashboard() {
                   <span className="font-medium tabular-nums">{fmtInt(totals.excessCount)}</span>
                 </div>
               </div>
-            </Card>
+            </InfoCard>
             <RankList
               title="Top materiais com maior excesso"
               icon={<AlertTriangle className="h-4 w-4" />}
               rows={topExcessMaterials}
+              help={{
+                title: "Top materiais com maior excesso",
+                items: [
+                  {
+                    term: "Definição",
+                    definition:
+                      "Materiais com maior volume puxado acima do exigido, somando todas as ordens do período.",
+                  },
+                ],
+              }}
               render={(r) => (
                 <div key={r.key} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                   <span className="truncate font-medium">{r.label}</span>
@@ -739,8 +845,28 @@ export function FactoryPullDashboard() {
                 </div>
               )}
             />
-            <Card className="flex flex-col gap-2 p-4">
-              <p className="text-sm font-semibold">Divergência SAP × físico</p>
+            <InfoCard
+              title="Divergência SAP × físico"
+              help={{
+                title: "Divergência SAP × físico",
+                items: [
+                  {
+                    term: "OK",
+                    definition: "A quantidade fornecida pelo SAP é igual à puxada física.",
+                  },
+                  {
+                    term: "Positiva (físico > SAP)",
+                    definition:
+                      "Foi puxado mais do que o SAP registrou como fornecido — sobra física.",
+                  },
+                  {
+                    term: "Negativa (físico < SAP)",
+                    definition:
+                      "O SAP registrou mais do que foi puxado — falta física.",
+                  },
+                ],
+              }}
+            >
               <div className="flex flex-col gap-1.5 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">OK</span>
@@ -755,14 +881,31 @@ export function FactoryPullDashboard() {
                   <span className="font-medium tabular-nums text-danger">{fmtInt(reconciliationStats.negative)}</span>
                 </div>
               </div>
-            </Card>
+            </InfoCard>
           </div>
 
           <Card className="p-4">
-            <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
-              <RotateCcw className="h-4 w-4 text-danger" /> Recebimentos estornados
-              <Badge variant="danger">{fmtInt(reversedStats.count)}</Badge>
-            </p>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <RotateCcw className="h-4 w-4 text-danger" /> Recebimentos estornados
+                <Badge variant="danger">{fmtInt(reversedStats.count)}</Badge>
+              </p>
+              <InfoPopover
+                title="Recebimentos estornados"
+                items={[
+                  {
+                    term: "O que é",
+                    definition:
+                      "Paletes cujo recebimento foi estornado (devolvido à produção). Deixam de contar como puxados.",
+                  },
+                  {
+                    term: "Como usar",
+                    definition:
+                      "Confira documento, ordem, quantidade e motivo para identificar e corrigir recebimentos feitos a mais ou por engano.",
+                  },
+                ]}
+              />
+            </div>
             {reversedRows.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Nenhum recebimento estornado no período.

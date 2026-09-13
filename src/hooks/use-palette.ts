@@ -63,9 +63,13 @@ export function usePalette() {
 
   const savePalette = useMutation({
     mutationFn: async (p: ColorPalette) => {
+      const payload = {
+        key: "color_palette",
+        value: p as unknown as never,
+      };
       const { error } = await supabase
         .from("system_settings")
-        .upsert({ key: "color_palette", value: p }, { onConflict: "key" });
+        .upsert(payload as never, { onConflict: "key" });
       if (error) throw error;
       saveLocal(p);
     },
