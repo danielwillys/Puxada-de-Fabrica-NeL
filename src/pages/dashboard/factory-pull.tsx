@@ -33,6 +33,7 @@ import {
 } from "recharts";
 import { FilterBar } from "@/components/filter-bar";
 import { KpiCard } from "@/components/kpi-card";
+import { InfoPopover } from "@/components/info-popover";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -126,16 +127,23 @@ function ChartCard({
   sub,
   children,
   className,
+  help,
 }: {
   title: string;
   sub?: string;
   children: React.ReactNode;
   className?: string;
+  help?: { title: string; items: { term: string; definition: string }[] };
 }) {
   return (
     <Card className={`p-4 ${className ?? ""}`}>
-      <p className="text-sm font-semibold">{title}</p>
-      {sub ? <p className="text-xs text-muted-foreground">{sub}</p> : null}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">{title}</p>
+          {sub ? <p className="text-xs text-muted-foreground">{sub}</p> : null}
+        </div>
+        {help ? <InfoPopover title={help.title} items={help.items} className="shrink-0" /> : null}
+      </div>
       <div className="mt-3 h-64">{children}</div>
     </Card>
   );
@@ -468,6 +476,31 @@ export function FactoryPullDashboard() {
             <ChartCard
               title="Planejado × Apontado × Puxado × Pendente"
               sub="Planejado (Data-base iníc.) · Apontado/produzido (início real) · Puxado (Recebimento) · Pendente"
+              help={{
+                title: "Como ler este gráfico",
+                items: [
+                  {
+                    term: "Planejado",
+                    definition:
+                      "Quantidade planejada da ordem (COOISPI), agrupada pela Data-base iníc. (planned_start).",
+                  },
+                  {
+                    term: "Apontado (produzido)",
+                    definition:
+                      "Quantidade boa confirmada (GMEIN), agrupada pela Data início real da ordem.",
+                  },
+                  {
+                    term: "Puxado (Recebimento)",
+                    definition:
+                      "Quantidade de caixas recebidas na base de Recebimento, por data do recebimento.",
+                  },
+                  {
+                    term: "Pendente puxada",
+                    definition:
+                      "O que foi produzido mas ainda não puxado: max(0, produzido − puxado).",
+                  },
+                ],
+              }}
             >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dayPoints}>
@@ -487,6 +520,21 @@ export function FactoryPullDashboard() {
             <ChartCard
               title="Eficiência ao longo do tempo"
               sub="Puxado (Recebimento) ÷ produzido (GMEIN) por dia. Máx. 100%"
+              help={{
+                title: "Eficiência",
+                items: [
+                  {
+                    term: "Fórmula",
+                    definition:
+                      "Eficiência = puxado (base Recebimento) ÷ produzido (quantidade boa confirmada GMEIN), limitada a 100%. Usa o produzido real, não o planejado.",
+                  },
+                  {
+                    term: "Por que produzido?",
+                    definition:
+                      "Se planejou x e produziu y, o real da operação é y. A eficiência mede quanto do que foi realmente produzido já foi puxado.",
+                  },
+                ],
+              }}
             >
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={dayPoints}>
@@ -516,6 +564,21 @@ export function FactoryPullDashboard() {
             <ChartCard
               title="Saldo a puxar por dia"
               sub="Backlog: produzido (GMEIN) ainda não puxado (Recebimento), por dia de início real"
+              help={{
+                title: "Saldo a puxar",
+                items: [
+                  {
+                    term: "Definição",
+                    definition:
+                      "Para cada ordem: max(0, produzido (quantidade boa confirmada) − puxado (base Recebimento)). É o que foi produzido e ainda aguarda puxada.",
+                  },
+                  {
+                    term: "Estornos",
+                    definition:
+                      "Recebimentos estornados deixam de contar no puxado, aumentando o saldo (material devolvido à produção).",
+                  },
+                ],
+              }}
             >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dayPoints}>
@@ -543,6 +606,21 @@ export function FactoryPullDashboard() {
             <ChartCard
               title="Puxado físico por dia"
               sub="Quantidade de caixas recebidas (base Recebimento), por data de recebimento"
+              help={{
+                title: "Puxado físico",
+                items: [
+                  {
+                    term: "Fonte dos dados",
+                    definition:
+                      "Soma das quantidades da base de Recebimento (production_receipts) por data do recebimento (goods_receipt_date), considerando apenas entradas válidas.",
+                  },
+                  {
+                    term: "Estornos",
+                    definition:
+                      "Entradas estornadas (is_valid = false) não aparecem neste gráfico — o valor reflete apenas o que permanece válido.",
+                  },
+                ],
+              }}
             >
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={pulledByDay}>

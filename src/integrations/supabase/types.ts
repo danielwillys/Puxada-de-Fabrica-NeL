@@ -4035,6 +4035,10 @@ export type Database = {
           shift_id: number
         }[]
       }
+      link_tasks_to_orders: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       refresh_order_metrics: {
         Args: Record<PropertyKey, never>
         Returns: undefined

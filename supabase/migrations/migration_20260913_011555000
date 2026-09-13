@@ -1,0 +1,27 @@
+-- Vincula tarefas de depósito (1020/1012) à ordem de produção quando a tarefa
+-- não traz a ordem, comparando material + lote com ordens que possuem UM ÚNICO
+-- lote para aquele material (ex.: ordem 10017004 / material 3000000215 / lote
+-- 0000022148). Combinações ambíguas (mais de uma ordem para o mesmo material+lote)
+-- ficam sem vínculo para não errar.
+create or replace function public.link_tasks_to_orders()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  with unica_ordem as (
+    select material_code, lot, min(order_number) as order_number
+    from public.production_orders
+    where lot is not null and material_code is not null
+    group by material_code, lot
+    having count(*) = 1
+  )
+  update public.warehouse_tasks t
+  set production_order = u.order_number
+  from unica_ordem u
+  where (t.production_order is null or t.production_order = '')
+    and t.material_code = u.material_code
+    and t.lot = u.lot;
+$$;
+
+select public.link_tasks_to_orders();

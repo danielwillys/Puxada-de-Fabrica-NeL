@@ -464,6 +464,12 @@ Deno.serve(async (req) => {
         } catch {
           // classification can be reprocessed later by an administrator
         }
+        try {
+          // Vincula UCs à ordem por material+lote (quando a tarefa não traz a ordem).
+          await supabase.rpc("link_tasks_to_orders");
+        } catch {
+          // link is best-effort
+        }
       }
     }
 
