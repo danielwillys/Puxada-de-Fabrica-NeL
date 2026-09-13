@@ -70,6 +70,8 @@ export interface ProductionOrderMetric {
   created_date: string | null;
   first_pull_at: string | null;
   last_pull_at: string | null;
+  /** Quantidade de tarefas de puxada (1020) em aberto/espera para a ordem. */
+  open_task_count: number | null;
 }
 
 export interface ProductionReceipt {

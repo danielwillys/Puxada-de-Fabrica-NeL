@@ -171,6 +171,25 @@ export function FilterBar({ filters, onChange, className, showShiftFilters = fal
         </Select>
       </Field>
 
+      <Field label="Divergência SAP × físico">
+        <Select
+          value={filters.divergence || "todas"}
+          onValueChange={(v) =>
+            set({ divergence: v === "todas" ? "" : (v as GlobalFilters["divergence"]) })
+          }
+        >
+          <SelectTrigger className="h-9 w-[200px]">
+            <SelectValue placeholder="Todas" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todas">Todas</SelectItem>
+            <SelectItem value="ok">OK (físico = SAP)</SelectItem>
+            <SelectItem value="positive">Físico &gt; SAP</SelectItem>
+            <SelectItem value="negative">Físico &lt; SAP</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+
       <Button
         type="button"
         variant="outline"
@@ -187,6 +206,7 @@ export function FilterBar({ filters, onChange, className, showShiftFilters = fal
             status: "",
             shiftId: "",
             operationalDay: "",
+            divergence: "",
           })
         }
       >

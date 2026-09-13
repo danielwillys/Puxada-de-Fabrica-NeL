@@ -3974,6 +3974,7 @@ export type Database = {
           lot: string | null
           material_code: string | null
           material_description: string | null
+          open_task_count: number | null
           order_number: string | null
           planned_quantity: number | null
           planned_start: string | null

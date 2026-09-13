@@ -47,6 +47,8 @@ export interface GlobalFilters {
   shiftId: string;
   /** Dia operacional ("" = todos). Usado pelas telas de performance. */
   operationalDay: string;
+  /** Divergência SAP × físico ("" = todas, positive, negative, ok). */
+  divergence: "" | "positive" | "negative" | "ok";
 }
 
 export const EMPTY_FILTERS: GlobalFilters = {
@@ -59,6 +61,7 @@ export const EMPTY_FILTERS: GlobalFilters = {
   status: "",
   shiftId: "",
   operationalDay: "",
+  divergence: "",
 };
 
 export function periodToRange(
@@ -115,7 +118,7 @@ export function useDebouncedFilters(initial: GlobalFilters, delay = 300) {
 }
 
 const METRICS_SELECT =
-  "id,order_number,material_code,material_description,unit,lot,planned_quantity,confirmed_quantity,sap_supplied_quantity,required_quantity,pulled_quantity,balance_quantity,excess_quantity,pull_efficiency_percent,status,actual_start,actual_end,planned_start,created_date,first_pull_at,last_pull_at";
+  "id,order_number,material_code,material_description,unit,lot,planned_quantity,confirmed_quantity,sap_supplied_quantity,required_quantity,pulled_quantity,balance_quantity,excess_quantity,pull_efficiency_percent,status,actual_start,actual_end,planned_start,created_date,first_pull_at,last_pull_at,open_task_count";
 
 type Builder = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -194,6 +197,7 @@ export function useReconciliation(filters: GlobalFilters) {
           `material_code.ilike.%${material}%,material_description.ilike.%${material}%`,
         );
       }
+      if (filters.divergence) q = q.eq("classification", filters.divergence);
       const { data, error } = await q;
       if (error) throw error;
       return (data ?? []) as unknown as SapReconciliation[];

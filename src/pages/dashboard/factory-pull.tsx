@@ -46,7 +46,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useDailyPulled, useImports, useMetrics, useReconciliation, useReversedReceipts, type GlobalFilters } from "@/lib/queries";
+import { useDailyPulled, useImports, useMetrics, useReconciliation, useReversedReceipts, periodToRange, type GlobalFilters } from "@/lib/queries";
 import { useFilters } from "@/context/filters-context";
 import { fmtDateTime, fmtInt, fmtPercent, fmtQty } from "@/lib/format";
 import { ORDER_STATUS_META, type ProductionOrderMetric } from "@/lib/types";
@@ -88,7 +88,10 @@ function todayStr(): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-function buildDayPoints(rows: ProductionOrderMetric[]): DayPoint[] {
+function buildDayPoints(
+  rows: ProductionOrderMetric[],
+  range: { start: string; end: string },
+): DayPoint[] {
   const map = new Map<string, DayPoint>();
   const add = (day: string, patch: Partial<DayPoint>) => {
     const cur = map.get(day) ?? {
@@ -121,14 +124,20 @@ function buildDayPoints(rows: ProductionOrderMetric[]): DayPoint[] {
     });
   }
 
+  const today = todayStr();
+  const inRange =
+    range.start && range.end
+      ? (d: string) => d === "sem data" || (d >= range.start && d <= range.end)
+      : () => true;
+
   return [...map.values()]
     .map((p) => ({
       ...p,
       efficiency:
         p.produced > 0 ? Math.min(100, Math.round((p.pulled / p.produced) * 100)) : 0,
     }))
-    // Não exibe dias que ainda não chegaram (o planejado pode ter data futura).
-    .filter((p) => p.day === "sem data" || p.day <= todayStr())
+    // Respeita o período selecionado e não exibe dias que ainda não chegaram.
+    .filter((p) => p.day <= today && inRange(p.day))
     .sort((a, b) => a.day.localeCompare(b.day));
 }
 
@@ -274,6 +283,8 @@ export function FactoryPullDashboard() {
       balance: 0,
       excessQty: 0,
       required: 0,
+      openTasks: 0,
+      ordersWithOpenTasks: 0,
     };
     for (const r of rows) {
       t.orders += 1;
@@ -288,6 +299,10 @@ export function FactoryPullDashboard() {
       t.balance += Math.max(0, r.confirmed_quantity - r.pulled_quantity);
       t.excessQty += r.excess_quantity;
       t.required += r.required_quantity;
+      if ((r.open_task_count ?? 0) > 0) {
+        t.openTasks += r.open_task_count ?? 0;
+        t.ordersWithOpenTasks += 1;
+      }
     }
     return t;
   }, [rows]);
@@ -310,7 +325,16 @@ export function FactoryPullDashboard() {
     return { ok, positive, negative, total: rowsR.length };
   }, [reconciliation.data]);
 
-  const dayPoints = useMemo(() => buildDayPoints(rows), [rows]);
+  const dayPoints = useMemo(
+    () =>
+      buildDayPoints(
+        rows,
+        debounced.period !== "custom"
+          ? periodToRange(debounced.period)
+          : { start: debounced.startDate, end: debounced.endDate },
+      ),
+    [rows, debounced],
+  );
 
   const statusPie = useMemo(() => {
     const countByStatus: Record<string, number> = {
@@ -392,6 +416,18 @@ export function FactoryPullDashboard() {
     navigate("/ordens");
   };
 
+  const openOpenTasks = () => {
+    // Vai para a tela de ordens com o filtro de status "em andamento", que
+    // agora considera ordens com tarefa de puxada em aberto.
+    setFilters({ ...filters, status: "in_progress" as GlobalFilters["status"] });
+    navigate("/ordens");
+  };
+
+  const openDivergence = (kind: "positive" | "negative") => {
+    setFilters({ ...filters, divergence: kind });
+    navigate("/ordens");
+  };
+
   const loading = metrics.isLoading;
 
   if (loading) {
@@ -457,6 +493,14 @@ export function FactoryPullDashboard() {
               onClick={() => openStatus("in_progress")}
             />
             <KpiCard
+              label="Tarefas de puxada em aberto"
+              value={fmtInt(totals.openTasks)}
+              icon={Timer}
+              tone="warning"
+              sub={`${fmtInt(totals.ordersWithOpenTasks)} ordens aguardando armazenagem`}
+              onClick={openOpenTasks}
+            />
+            <KpiCard
               label="Finalizadas"
               value={fmtInt(totals.completed)}
               icon={CheckCircle2}
@@ -505,6 +549,27 @@ export function FactoryPullDashboard() {
               icon={Scale}
               tone={reconciliationStats.positive + reconciliationStats.negative > 0 ? "warning" : "success"}
               sub={reconciliationStats.total > 0 ? `de ${reconciliationStats.total} ordens` : "sem dados"}
+              onClick={() =>
+                reconciliationStats.positive + reconciliationStats.negative > 0
+                  ? openDivergence("positive")
+                  : openStatus("completed")
+              }
+            />
+            <KpiCard
+              label="Físico > SAP"
+              value={fmtInt(reconciliationStats.positive)}
+              icon={Scale}
+              tone="warning"
+              sub="Puxado a mais que o fornecimento"
+              onClick={() => openDivergence("positive")}
+            />
+            <KpiCard
+              label="Físico < SAP"
+              value={fmtInt(reconciliationStats.negative)}
+              icon={Scale}
+              tone="danger"
+              sub="Faltou puxar do fornecimento"
+              onClick={() => openDivergence("negative")}
             />
           </div>
 
