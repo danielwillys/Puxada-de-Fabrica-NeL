@@ -114,6 +114,9 @@ function TimelineStep({
 function taskPullAt(t: WarehouseTask): Date | null {
   return parseLocalDateTime(t.creation_date, t.creation_time);
 }
+function taskStorageAt(t: WarehouseTask): Date | null {
+  return parseLocalDateTime(t.confirmation_date, t.confirmation_time);
+}
 
 export function OrderDetail() {
   const { orderNumber = "" } = useParams();
@@ -330,11 +333,15 @@ export function OrderDetail() {
                   <TableHead className="text-right">Qtd.</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Puxada</TableHead>
+                  <TableHead>Armazenagem</TableHead>
+                  <TableHead className="text-right">Espera</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {taskList.map((t) => {
                   const pullAt = taskPullAt(t);
+                  const storageAt = taskStorageAt(t);
+                  const wait = minutesBetween(pullAt, storageAt);
                   return (
                     <TableRow key={t.id}>
                       <TableCell className="font-medium">{t.source_uc ?? "—"}</TableCell>
@@ -354,12 +361,24 @@ export function OrderDetail() {
                           {fmtDateTime(pullAt?.toISOString())}
                         </span>
                       </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <span className="flex items-center gap-1 text-muted-foreground">
+                          <User className="h-3 w-3" />
+                          {t.confirmed_by ?? "—"}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {fmtDateTime(storageAt?.toISOString())}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {wait !== null && wait >= 0 ? fmtDurationMinutes(wait) : "—"}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
                 {taskList.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                       Nenhuma tarefa de puxada (1020) vinculada a esta ordem.
                     </TableCell>
                   </TableRow>
