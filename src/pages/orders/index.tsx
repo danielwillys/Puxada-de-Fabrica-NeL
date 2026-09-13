@@ -37,6 +37,7 @@ const COLUMNS: {
   { key: "required_quantity", label: "Exigida", sortable: true, numeric: true },
   { key: "sap_supplied_quantity", label: "SAP", sortable: true, numeric: true },
   { key: "pulled_quantity", label: "Puxada física", sortable: true, numeric: true },
+  { key: "divergence", label: "Divergência", numeric: true },
   { key: "balance_quantity", label: "Saldo", sortable: true, numeric: true },
   { key: "excess_quantity", label: "Excesso", sortable: true, numeric: true },
   { key: "pull_efficiency_percent", label: "% puxado", sortable: true, numeric: true },
@@ -59,6 +60,7 @@ const EXPORT_LABELS: Record<string, string> = {
   required_quantity: "Quantidade exigida",
   sap_supplied_quantity: "Qtd. fornecida (SAP)",
   pulled_quantity: "Qtd. puxada fisicamente",
+  divergence: "Divergência SAP × físico",
   balance_quantity: "Saldo a puxar",
   excess_quantity: "Excesso",
   pull_efficiency_percent: "% puxado",
@@ -235,7 +237,15 @@ export function OrdersPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(orders.data?.rows ?? []).map((row) => (
+                  {(orders.data?.rows ?? [])
+                    .filter((row) => {
+                      if (!filters.divergence) return true;
+                      const d = row.pulled_quantity - row.sap_supplied_quantity;
+                      if (filters.divergence === "positive") return d > 0.001;
+                      if (filters.divergence === "negative") return d < -0.001;
+                      return Math.abs(d) <= 0.001;
+                    })
+                    .map((row) => (
                     <TableRow
                       key={row.id}
                       className="cursor-pointer"
@@ -248,19 +258,45 @@ export function OrdersPage() {
                       </TableCell>
                       <TableCell>{row.lot ?? "—"}</TableCell>
                       <TableCell>{row.unit ?? "—"}</TableCell>
-                      {[
-                        row.planned_quantity,
-                        row.confirmed_quantity,
-                        row.required_quantity,
-                        row.sap_supplied_quantity,
-                        row.pulled_quantity,
-                        row.balance_quantity,
-                        row.excess_quantity,
-                      ].map((v, i) => (
-                        <TableCell key={i} className="whitespace-nowrap text-right tabular-nums">
-                          {fmtQty(v)}
-                        </TableCell>
-                      ))}
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.planned_quantity)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.confirmed_quantity)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.required_quantity)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.sap_supplied_quantity)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.pulled_quantity)}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const d = row.pulled_quantity - row.sap_supplied_quantity;
+                          return (
+                            <span
+                              className={
+                                Math.abs(d) <= 0.001
+                                  ? "text-success"
+                                  : d > 0
+                                    ? "text-warning"
+                                    : "text-danger"
+                              }
+                            >
+                              {fmtQty(d)}
+                            </span>
+                          );
+                        })()}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.balance_quantity)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.excess_quantity)}
+                      </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {fmtPercent(row.pull_efficiency_percent)}
                       </TableCell>
@@ -278,6 +314,20 @@ export function OrdersPage() {
                     <TableRow>
                       <TableCell colSpan={COLUMNS.length} className="py-10 text-center text-muted-foreground">
                         Nenhum dado disponível para o período selecionado.
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                  {filters.divergence &&
+                  (orders.data?.rows ?? []).length > 0 &&
+                  (orders.data?.rows ?? []).filter((row) => {
+                    const d = row.pulled_quantity - row.sap_supplied_quantity;
+                    if (filters.divergence === "positive") return d > 0.001;
+                    if (filters.divergence === "negative") return d < -0.001;
+                    return Math.abs(d) <= 0.001;
+                  }).length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={COLUMNS.length} className="py-10 text-center text-muted-foreground">
+                        Nenhuma ordem com essa divergência no período selecionado.
                       </TableCell>
                     </TableRow>
                   ) : null}

@@ -23,6 +23,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { InfoPopover } from "@/components/info-popover";
 import {
   Table,
   TableBody,
@@ -45,10 +46,11 @@ import {
 import { fmtDurationMinutes, fmtInt, fmtPercent, fmtQty } from "@/lib/format";
 
 const C = {
-  primary: "#2563eb",
-  success: "#16a34a",
-  warning: "#f59e0b",
-  danger: "#dc2626",
+  // Paleta N&L: vermelho vivo, azul marinho, verde e amarelo de status do BI
+  primary: "#CE1E29",
+  success: "#44CE55",
+  warning: "#E1C333",
+  danger: "#A22E2E",
   muted: "#94a3b8",
 };
 
@@ -63,7 +65,7 @@ const CHART_TOOLTIP = {
 };
 
 function shiftColor(i: number) {
-  const palette = [C.primary, C.success, C.warning, "#8b5cf6", C.danger, C.muted];
+  const palette = [C.primary, C.success, C.warning, "#0F245B", C.danger, C.muted];
   return palette[i % palette.length];
 }
 
@@ -83,7 +85,29 @@ function ShiftCard({ s, index }: { s: ShiftSummary; index: number }) {
             <p className="text-xs text-muted-foreground">{s.code}</p>
           </div>
         </div>
-        {s.pulls + s.stores === 0 ? <Badge variant="neutral">Sem dados</Badge> : null}
+        <div className="flex items-center gap-1">
+          {s.pulls + s.stores === 0 ? <Badge variant="neutral">Sem dados</Badge> : null}
+          <InfoPopover
+            title="Métricas deste card"
+            items={[
+              {
+                term: "Tempo médio",
+                definition:
+                  "Média do tempo entre a puxada e a armazenagem de cada palete. Não é 'tempo total ÷ produtividade'.",
+              },
+              {
+                term: "P90",
+                definition:
+                  "Percentil 90: o tempo em que 90% dos paletes foram armazenados. Ex.: P90 de 45 min significa que 90% dos paletes levaram até 45 min entre puxar e armazenar.",
+              },
+              {
+                term: "% SLA",
+                definition:
+                  "Percentual de paletes armazenados dentro do tempo alvo configurável (hoje 30 min). Um operador que só puxa não gera pares puxada→armazenagem, então não tem tempo médio/P90/SLA.",
+              },
+            ]}
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">

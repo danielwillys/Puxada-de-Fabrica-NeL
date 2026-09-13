@@ -47,6 +47,8 @@ export interface GlobalFilters {
   shiftId: string;
   /** Dia operacional ("" = todos). Usado pelas telas de performance. */
   operationalDay: string;
+  /** Divergência SAP × físico ("" = todas, positive, negative, ok). */
+  divergence: "" | "positive" | "negative" | "ok";
 }
 
 export const EMPTY_FILTERS: GlobalFilters = {
@@ -59,6 +61,7 @@ export const EMPTY_FILTERS: GlobalFilters = {
   status: "",
   shiftId: "",
   operationalDay: "",
+  divergence: "",
 };
 
 export function periodToRange(
@@ -88,7 +91,8 @@ export function periodToRange(
     }
     case "month": {
       const s = new Date(today.getFullYear(), today.getMonth(), 1);
-      const e = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      // Limita ao dia atual: não mostrar dias que ainda não chegaram.
+      const e = today;
       return { start: to(s), end: to(e) };
     }
     case "prevMonth": {
@@ -114,7 +118,7 @@ export function useDebouncedFilters(initial: GlobalFilters, delay = 300) {
 }
 
 const METRICS_SELECT =
-  "id,order_number,material_code,material_description,unit,lot,planned_quantity,confirmed_quantity,sap_supplied_quantity,required_quantity,pulled_quantity,balance_quantity,excess_quantity,pull_efficiency_percent,status,actual_start,actual_end,planned_start,created_date,first_pull_at,last_pull_at";
+  "id,order_number,material_code,material_description,unit,lot,planned_quantity,confirmed_quantity,sap_supplied_quantity,required_quantity,pulled_quantity,balance_quantity,excess_quantity,pull_efficiency_percent,status,actual_start,actual_end,planned_start,created_date,first_pull_at,last_pull_at,open_task_count,normalized_saldo,normalized_reason,normalized_at";
 
 type Builder = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -135,9 +139,11 @@ function applyFilters(q: Builder, f: GlobalFilters): Builder {
       ? periodToRange(f.period)
       : { start: f.startDate, end: f.endDate };
   if (range.start && range.end) {
-    q = q
-      .gte("created_date", `${range.start}T00:00:00`)
-      .lte("created_date", `${range.end}T23:59:59`);
+    // O período é filtrado pela data real de início da ordem (actual_start).
+    // Ordens sem data real usam a data de criação como fallback.
+    q = q.or(
+      `and(actual_start.gte.${range.start}T00:00:00,actual_start.lte.${range.end}T23:59:59),and(actual_start.is.null,created_date.gte.${range.start}T00:00:00,created_date.lte.${range.end}T23:59:59)`,
+    );
   }
   const order = f.orderNumber.trim();
   if (order) q = q.ilike("order_number", `%${order}%`);
@@ -170,6 +176,7 @@ export function useMetrics(filters: GlobalFilters) {
       return (data ?? []) as unknown as ProductionOrderMetric[];
     },
     staleTime: 20_000,
+    placeholderData: (prev: ProductionOrderMetric[] | undefined) => prev,
   });
 }
 
@@ -190,6 +197,7 @@ export function useReconciliation(filters: GlobalFilters) {
           `material_code.ilike.%${material}%,material_description.ilike.%${material}%`,
         );
       }
+      if (filters.divergence) q = q.eq("classification", filters.divergence);
       const { data, error } = await q;
       if (error) throw error;
       return (data ?? []) as unknown as SapReconciliation[];
@@ -214,6 +222,39 @@ export function useDailyPulled(filters: GlobalFilters) {
       const { data, error } = await q;
       if (error) throw error;
       return (data ?? []) as unknown as { goods_receipt_date: string | null; quantity: number }[];
+    },
+    staleTime: 20_000,
+  });
+}
+
+/** Recebimentos estornados (is_valid = false) no período — para o card de controle. */
+export function useReversedReceipts(filters: GlobalFilters) {
+  return useQuery({
+    queryKey: ["reversed-receipts", filters],
+    queryFn: async () => {
+      const range = dateRangeOf(filters);
+      let q = supabase
+        .from("production_receipts")
+        .select("id,document_number,production_order,material_code,lot,quantity,unit,reversal_reason,reversed_at")
+        .eq("is_valid", false);
+      if (range.start && range.end) {
+        q = q
+          .gte("reversed_at", `${range.start}T00:00:00`)
+          .lte("reversed_at", `${range.end}T23:59:59`);
+      }
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as unknown as {
+        id: number;
+        document_number: string;
+        production_order: string | null;
+        material_code: string;
+        lot: string | null;
+        quantity: number;
+        unit: string | null;
+        reversal_reason: string | null;
+        reversed_at: string | null;
+      }[];
     },
     staleTime: 20_000,
   });
@@ -500,20 +541,22 @@ export function usePerformanceTasks(filters: GlobalFilters) {
           )
           .order("id", { ascending: true })
           .range(from, from + pageSize - 1);
-        // Each or() composes with AND — day range and shift filter stay independent.
-        if (range.start && range.end) {
+        // O período usa as DATAS REAIS da tarefa (não o dia operacional):
+        // puxada = data de criação da tarefa 1020; armazenagem = data de confirmação
+        // da 1012. Assim os totais batem com o relatório da operação.
+        if (filters.operationalDay) {
           q = q.or(
-            `and(operational_pull_day.gte.${range.start},operational_pull_day.lte.${range.end}),and(operational_storage_day.gte.${range.start},operational_storage_day.lte.${range.end})`,
+            `and(process_type.eq.1020,creation_date.eq.${filters.operationalDay}),and(process_type.eq.1012,confirmation_date.eq.${filters.operationalDay})`,
+          );
+        } else if (range.start && range.end) {
+          q = q.or(
+            `and(process_type.eq.1020,creation_date.gte.${range.start},creation_date.lte.${range.end}),and(process_type.eq.1012,confirmation_date.gte.${range.start},confirmation_date.lte.${range.end})`,
           );
         }
+        // Cada or() compõe com AND — o período e o turno ficam independentes.
         if (filters.shiftId) {
           q = q.or(
             `pull_shift_id.eq.${filters.shiftId},storage_shift_id.eq.${filters.shiftId}`,
-          );
-        }
-        if (filters.operationalDay) {
-          q = q.or(
-            `operational_pull_day.eq.${filters.operationalDay},operational_storage_day.eq.${filters.operationalDay}`,
           );
         }
         const { data, error } = await q;

@@ -13,6 +13,7 @@ import {
   Loader2,
   Package,
   RotateCcw,
+  Scale,
   User,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -124,6 +125,8 @@ export function OrderDetail() {
   const isAdmin = profile?.role === "admin";
   const canReversal = usePermission("orders:reversal");
   const canReversalAction = isAdmin || canReversal;
+  const canNormalize = usePermission("orders:normalize");
+  const canNormalizeAction = isAdmin || canNormalize;
   const metrics = useOrderMetrics(orderNumber);
   const receipts = useOrderReceipts(orderNumber);
   const tasks = useOrderTasks(orderNumber);
@@ -133,6 +136,32 @@ export function OrderDetail() {
     receipt: ProductionReceipt;
     reason: string;
   } | null>(null);
+
+  const [normalizeOpen, setNormalizeOpen] = useState(false);
+  const [normalizeReason, setNormalizeReason] = useState("Divergência analisada e aceita");
+
+  const toggleNormalize = useMutation({
+    mutationFn: async () => {
+      if (!row) return;
+      const { error } = await supabase
+        .from("production_orders")
+        .update({
+          normalized_saldo: !row.normalized_saldo,
+          normalized_reason: row.normalized_saldo ? null : normalizeReason,
+          normalized_at: row.normalized_saldo ? null : new Date().toISOString(),
+        })
+        .eq("order_number", orderNumber);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success(row?.normalized_saldo ? "Normalização removida." : "Saldo normalizado (divergência aceita).");
+      setNormalizeOpen(false);
+      qc.invalidateQueries({ queryKey: ["order-metrics", orderNumber] });
+      qc.invalidateQueries({ queryKey: ["audit"] });
+      qc.invalidateQueries({ queryKey: ["metrics"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Não foi possível normalizar."),
+  });
 
   const toggleReceipt = useMutation({
     mutationFn: async (r: ProductionReceipt) => {
@@ -161,7 +190,13 @@ export function OrderDetail() {
 
   const row = metrics.data;
   const receiptList = useMemo(() => receipts.data ?? [], [receipts.data]);
-  const taskList = useMemo(() => tasks.data ?? [], [tasks.data]);
+  // A tabela "Pallets / UC da ordem" mostra somente as tarefas de puxada (1020).
+  // As armazenagens (1012) são contabilizadas no 1020 e só interessam na
+  // performance dos operadores.
+  const taskList = useMemo(
+    () => (tasks.data ?? []).filter((t) => t.process_type === "1020"),
+    [tasks.data],
+  );
 
   const lastStorageAt = useMemo(() => {
     let max: Date | null = null;
@@ -264,6 +299,27 @@ export function OrderDetail() {
           Ordem {row.order_number}
         </h1>
         <StatusBadge status={row.status} />
+        <div className="flex gap-2">
+          {row.normalized_saldo ? (
+            <Badge variant="info" title={row.normalized_reason ?? undefined}>
+              <Scale className="h-3 w-3" /> Saldo normalizado
+            </Badge>
+          ) : null}
+          {canNormalizeAction ? (
+            <Button
+              variant={row.normalized_saldo ? "outline" : "secondary"}
+              size="sm"
+              className="h-8"
+              onClick={() => {
+                if (row.normalized_saldo) toggleNormalize.mutate();
+                else setNormalizeOpen(true);
+              }}
+            >
+              <Scale className="h-3.5 w-3.5" />
+              {row.normalized_saldo ? "Remover normalização" : "Normalizar saldo"}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <Card className="p-4">
@@ -299,7 +355,7 @@ export function OrderDetail() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <Card className="p-4">
           <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
             <Clock className="h-4 w-4 text-primary" /> Linha do tempo
@@ -325,7 +381,6 @@ export function OrderDetail() {
                   <TableHead>Material</TableHead>
                   <TableHead>Lote</TableHead>
                   <TableHead className="text-right">Qtd.</TableHead>
-                  <TableHead>Processo</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Puxada</TableHead>
                   <TableHead>Armazenagem</TableHead>
@@ -344,11 +399,6 @@ export function OrderDetail() {
                       <TableCell>{t.material_code ?? "—"}</TableCell>
                       <TableCell>{t.lot ?? "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtQty(t.quantity)}</TableCell>
-                      <TableCell>
-                        <Badge variant={t.process_type === "1020" ? "info" : "secondary"}>
-                          {t.process_type || "—"}
-                        </Badge>
-                      </TableCell>
                       <TableCell>
                         <TaskStatusBadge status={t.task_status} />
                       </TableCell>
@@ -378,8 +428,8 @@ export function OrderDetail() {
                 })}
                 {taskList.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
-                      Nenhuma tarefa MON vinculada a esta ordem.
+                    <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                      Nenhuma tarefa de puxada (1020) vinculada a esta ordem.
                     </TableCell>
                   </TableRow>
                 ) : null}
@@ -528,6 +578,56 @@ export function OrderDetail() {
                 <ArrowLeftRight className="h-4 w-4" />
               )}
               {receiptAction?.receipt.is_valid ? "Confirmar estorno" : "Reativar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Normalização de saldo (divergência SAP × físico analisada e aceita) */}
+      <Dialog open={normalizeOpen} onOpenChange={setNormalizeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Normalizar saldo da ordem</DialogTitle>
+            <DialogDescription>
+              Após a análise da divergência SAP × físico, o sistema passa a{" "}
+              <strong>ignorar o excesso ou a falta de saldo</strong> desta ordem — ela deixa de
+              contar como "Com excesso" ou com saldo pendente. A ação é registrada na auditoria.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            <Label>Motivo da normalização</Label>
+            <Select value={normalizeReason} onValueChange={setNormalizeReason}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Divergência analisada e aceita">
+                  Divergência analisada e aceita
+                </SelectItem>
+                <SelectItem value="Excesso devolvido à produção">
+                  Excesso devolvido à produção
+                </SelectItem>
+                <SelectItem value="Falta compensada em outra ordem">
+                  Falta compensada em outra ordem
+                </SelectItem>
+                <SelectItem value="Recebimento corrigido">Recebimento corrigido</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNormalizeOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => toggleNormalize.mutate()}
+              disabled={toggleNormalize.isPending}
+            >
+              {toggleNormalize.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Scale className="h-4 w-4" />
+              )}
+              Confirmar normalização
             </Button>
           </DialogFooter>
         </DialogContent>

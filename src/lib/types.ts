@@ -45,6 +45,7 @@ export const PERMISSIONS: { key: string; label: string; group: string }[] = [
   { key: "users", label: "Usuários", group: "Administração" },
   { key: "roles", label: "Perfis e permissões", group: "Administração" },
   { key: "orders:reversal", label: "Estornar recebimentos", group: "Ações" },
+  { key: "orders:normalize", label: "Normalizar saldo da ordem", group: "Ações" },
   { key: "shifts:reprocess", label: "Reprocessar classificação", group: "Ações" },
 ];
 
@@ -70,6 +71,12 @@ export interface ProductionOrderMetric {
   created_date: string | null;
   first_pull_at: string | null;
   last_pull_at: string | null;
+  /** Quantidade de tarefas de puxada (1020) em aberto/espera para a ordem. */
+  open_task_count: number | null;
+  /** Se o analista normalizou o saldo (ignora excesso/falta após análise). */
+  normalized_saldo: boolean | null;
+  normalized_reason: string | null;
+  normalized_at: string | null;
 }
 
 export interface ProductionReceipt {

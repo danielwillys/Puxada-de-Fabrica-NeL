@@ -3,6 +3,7 @@ import { BarChart3, Gauge, UsersRound } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { InfoPopover } from "@/components/info-popover";
 import {
   Table,
   TableBody,
@@ -25,15 +26,16 @@ import { fmtInt, fmtPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const C = {
-  primary: "#2563eb",
-  success: "#16a34a",
-  warning: "#f59e0b",
-  danger: "#dc2626",
+  // Paleta N&L: vermelho vivo, azul marinho, verde e amarelo de status do BI
+  primary: "#CE1E29",
+  success: "#44CE55",
+  warning: "#E1C333",
+  danger: "#A22E2E",
   muted: "#94a3b8",
 };
 
 function shiftColor(i: number) {
-  const palette = [C.primary, C.success, C.warning, "#8b5cf6", C.danger, C.muted];
+  const palette = [C.primary, C.success, C.warning, "#0F245B", C.danger, C.muted];
   return palette[i % palette.length];
 }
 
@@ -137,9 +139,26 @@ export function ProductivityView({ filters }: { filters: GlobalFilters }) {
   return (
     <div className="flex flex-col gap-4">
       <Card className="p-4">
-        <p className="mb-1 flex items-center gap-2 text-sm font-semibold">
-          <BarChart3 className="h-4 w-4 text-primary" /> Heatmap de produtividade
-        </p>
+        <div className="mb-1 flex items-start justify-between gap-2">
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            <BarChart3 className="h-4 w-4 text-primary" /> Heatmap de produtividade
+          </p>
+          <InfoPopover
+            title="Heatmap de produtividade"
+            items={[
+              {
+                term: "O que mostra",
+                definition:
+                  "Número de puxadas por hora do dia e por turno, com base no horário em que a tarefa foi criada.",
+              },
+              {
+                term: "Como ler",
+                definition:
+                  "Células mais escuras concentram mais puxadas naquela hora. Ajuda a ver picos e ociosidade dentro de cada turno.",
+              },
+            ]}
+          />
+        </div>
         <p className="mb-4 text-xs text-muted-foreground">
           Número de puxadas por hora do dia e por turno (hora da criação da tarefa)
         </p>
@@ -165,9 +184,31 @@ export function ProductivityView({ filters }: { filters: GlobalFilters }) {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card className="p-4">
-          <p className="mb-1 flex items-center gap-2 text-sm font-semibold">
-            <Gauge className="h-4 w-4 text-primary" /> Produtividade normalizada
-          </p>
+          <div className="mb-1 flex items-start justify-between gap-2">
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              <Gauge className="h-4 w-4 text-primary" /> Produtividade normalizada
+            </p>
+            <InfoPopover
+              title="Produtividade normalizada"
+              items={[
+                {
+                  term: "Puxadas / operador",
+                  definition:
+                    "Total de puxadas do turno dividido pelo número de operadores que movimentaram paletes no período.",
+                },
+                {
+                  term: "Puxadas / hora",
+                  definition:
+                    "Puxadas por operador divididas pelas horas do turno — permite comparar turnos de durações diferentes.",
+                },
+                {
+                  term: "Horas / dia",
+                  definition:
+                    "Duração do turno (início até fim), usada como base para a média por hora.",
+                },
+              ]}
+            />
+          </div>
           <p className="mb-3 text-xs text-muted-foreground">
             Puxadas por operador e estimativa por hora de turno (paletes/hora)
           </p>
@@ -228,9 +269,31 @@ export function ProductivityView({ filters }: { filters: GlobalFilters }) {
         </Card>
 
         <Card className="p-4">
-          <p className="mb-1 flex items-center gap-2 text-sm font-semibold">
-            <UsersRound className="h-4 w-4 text-primary" /> Cobertura de operadores
-          </p>
+          <div className="mb-1 flex items-start justify-between gap-2">
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              <UsersRound className="h-4 w-4 text-primary" /> Cobertura de operadores
+            </p>
+            <InfoPopover
+              title="Cobertura de operadores"
+              items={[
+                {
+                  term: "Alocados",
+                  definition:
+                    "Operadores vinculados ao turno naquele dia (conforme a alocação de turno).",
+                },
+                {
+                  term: "Atuaram",
+                  definition:
+                    "Operadores que efetivamente movimentaram paletes naquele turno e dia.",
+                },
+                {
+                  term: "Cobertura",
+                  definition:
+                    "Atuaram ÷ alocados. Abaixo de 100% indica operador alocado que não movimentou paletes no dia.",
+                },
+              ]}
+            />
+          </div>
           <p className="mb-3 text-xs text-muted-foreground">
             Operadores alocados por turno (escala) × operadores que efetivamente
             movimentaram paletes no período

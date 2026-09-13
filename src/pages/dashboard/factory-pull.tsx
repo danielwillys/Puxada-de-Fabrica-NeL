@@ -9,6 +9,7 @@ import {
   Factory,
   Inbox,
   Package,
+  RotateCcw,
   Scale,
   Timer,
   TrendingUp,
@@ -32,56 +33,111 @@ import {
 } from "recharts";
 import { FilterBar } from "@/components/filter-bar";
 import { KpiCard } from "@/components/kpi-card";
+import { InfoPopover } from "@/components/info-popover";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useImports, useMetrics, useReconciliation, type GlobalFilters } from "@/lib/queries";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useDailyPulled, useImports, useMetrics, useReconciliation, useReversedReceipts, periodToRange, type GlobalFilters } from "@/lib/queries";
 import { useFilters } from "@/context/filters-context";
-import { fmtInt, fmtPercent, fmtQty } from "@/lib/format";
+import { fmtDateTime, fmtInt, fmtPercent, fmtQty } from "@/lib/format";
 import { ORDER_STATUS_META, type ProductionOrderMetric } from "@/lib/types";
 
 const C = {
-  primary: "#2563eb",
-  success: "#16a34a",
-  warning: "#f59e0b",
-  danger: "#dc2626",
+  // Paleta N&L: vermelho vivo, azul marinho, verde e amarelo de status do BI
+  primary: "#CE1E29",
+  success: "#44CE55",
+  warning: "#E1C333",
+  danger: "#A22E2E",
   muted: "#94a3b8",
+  navy: "#0F245B",
 };
 
 interface DayPoint {
   day: string;
+  /** Planejado: quantidade da ordem, agrupada pela Data-base iníc. (planned_start). */
   planned: number;
+  /** Apontado/produzido: Quantidade boa confirmada (GMEIN), agrupada pela Data início real. */
   produced: number;
+  /** Puxado: base Recebimento (soma das entradas físicas válidas). */
   pulled: number;
+  /** Pendente puxada: Puxado - Quantidade apontada (o que falta puxar do que foi produzido). */
+  pending: number;
+  /** Saldo por dia: backlog do produzido ainda não puxado (GMEIN - Recebimento). */
   balance: number;
   efficiency: number;
 }
 
-function buildDayPoints(rows: ProductionOrderMetric[]): DayPoint[] {
+function dayRef(value: string | null, fallback: string | null): string {
+  return (value ?? fallback ?? "").slice(0, 10) || "sem data";
+}
+
+/** Data de hoje (yyyy-mm-dd, horário local) — limite para não exibir dias futuros. */
+function todayStr(): string {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function buildDayPoints(
+  rows: ProductionOrderMetric[],
+  range: { start: string; end: string },
+): DayPoint[] {
   const map = new Map<string, DayPoint>();
-  for (const r of rows) {
-    const day = (r.created_date ?? "").slice(0, 10) || "sem data";
-    const p = map.get(day) ?? {
+  const add = (day: string, patch: Partial<DayPoint>) => {
+    const cur = map.get(day) ?? {
       day,
       planned: 0,
       produced: 0,
       pulled: 0,
+      pending: 0,
       balance: 0,
       efficiency: 0,
     };
-    p.planned += r.planned_quantity;
-    p.produced += r.confirmed_quantity;
-    p.pulled += r.pulled_quantity;
-    p.balance += r.balance_quantity;
-    map.set(day, p);
+    map.set(day, { ...cur, ...patch });
+  };
+
+  for (const r of rows) {
+    // Planejado no dia da Data-base iníc.; produzido/apontado no dia do início real.
+    const plannedDay = dayRef(r.planned_start, r.created_date);
+    add(plannedDay, {
+      planned: (map.get(plannedDay)?.planned ?? 0) + r.planned_quantity,
+    });
+    const prodDay = dayRef(r.actual_start, r.created_date);
+    const produced = r.confirmed_quantity;
+    const pulled = r.pulled_quantity;
+    add(prodDay, {
+      produced: (map.get(prodDay)?.produced ?? 0) + produced,
+      pulled: (map.get(prodDay)?.pulled ?? 0) + pulled,
+      // Pendente puxada = produzido (GMEIN) ainda não puxado (Recebimento).
+      pending: (map.get(prodDay)?.pending ?? 0) + Math.max(0, produced - pulled),
+      balance: (map.get(prodDay)?.balance ?? 0) + Math.max(0, produced - pulled),
+    });
   }
+
+  const today = todayStr();
+  const inRange =
+    range.start && range.end
+      ? (d: string) => d === "sem data" || (d >= range.start && d <= range.end)
+      : () => true;
+
   return [...map.values()]
     .map((p) => ({
       ...p,
       efficiency:
-        p.planned > 0 ? Math.min(100, Math.round((p.pulled / p.planned) * 100)) : 0,
+        p.produced > 0 ? Math.min(100, Math.round((p.pulled / p.produced) * 100)) : 0,
     }))
+    // Respeita o período selecionado e não exibe dias que ainda não chegaram.
+    .filter((p) => p.day <= today && inRange(p.day))
     .sort((a, b) => a.day.localeCompare(b.day));
 }
 
@@ -90,16 +146,23 @@ function ChartCard({
   sub,
   children,
   className,
+  help,
 }: {
   title: string;
   sub?: string;
   children: React.ReactNode;
   className?: string;
+  help?: { title: string; items: { term: string; definition: string }[] };
 }) {
   return (
     <Card className={`p-4 ${className ?? ""}`}>
-      <p className="text-sm font-semibold">{title}</p>
-      {sub ? <p className="text-xs text-muted-foreground">{sub}</p> : null}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">{title}</p>
+          {sub ? <p className="text-xs text-muted-foreground">{sub}</p> : null}
+        </div>
+        {help ? <InfoPopover title={help.title} items={help.items} className="shrink-0" /> : null}
+      </div>
       <div className="mt-3 h-64">{children}</div>
     </Card>
   );
@@ -110,17 +173,20 @@ function RankList({
   icon,
   rows,
   render,
+  help,
 }: {
   title: string;
   icon: React.ReactNode;
   rows: { key: string; label: string; value: number; unit?: string }[];
   render: (r: { key: string; label: string; value: number; unit?: string }) => React.ReactNode;
+  help?: { title: string; items: { term: string; definition: string }[] };
 }) {
   return (
     <Card className="flex flex-col p-4">
       <div className="mb-3 flex items-center gap-2">
         <span className="text-primary">{icon}</span>
         <p className="text-sm font-semibold">{title}</p>
+        {help ? <InfoPopover title={help.title} items={help.items} className="ml-auto" /> : null}
       </div>
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">Sem dados no período.</p>
@@ -129,6 +195,29 @@ function RankList({
           {rows.map((r) => render(r))}
         </div>
       )}
+    </Card>
+  );
+}
+
+/** Card simples com título + ícone e botão de ajuda opcional. */
+function InfoCard({
+  title,
+  help,
+  children,
+  className,
+}: {
+  title: string;
+  help?: { title: string; items: { term: string; definition: string }[] };
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <Card className={`flex flex-col gap-2 p-4 ${className ?? ""}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold">{title}</p>
+        {help ? <InfoPopover title={help.title} items={help.items} className="shrink-0" /> : null}
+      </div>
+      {children}
     </Card>
   );
 }
@@ -149,9 +238,37 @@ export function FactoryPullDashboard() {
   const metrics = useMetrics(debounced);
   const reconciliation = useReconciliation(debounced);
   const imports = useImports();
+  const reversed = useReversedReceipts(debounced);
+  const dailyPulled = useDailyPulled(debounced);
 
   const rows = useMemo(() => metrics.data ?? [], [metrics.data]);
   const hasAnyImport = (imports.data?.length ?? 0) > 0;
+  const reversedRows = useMemo(() => reversed.data ?? [], [reversed.data]);
+  const reversedStats = useMemo(
+    () => ({
+      count: reversedRows.length,
+      qty: reversedRows.reduce((a, r) => a + r.quantity, 0),
+    }),
+    [reversedRows],
+  );
+
+  /** Puxado físico por dia = base Recebimento (production_receipts), por data do recebimento. */
+  const pulledByDay = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of dailyPulled.data ?? []) {
+      const day = r.goods_receipt_date ?? "sem data";
+      map.set(day, (map.get(day) ?? 0) + r.quantity);
+    }
+    return [...map.entries()]
+      .map(([day, pulled]) => ({ day, pulled }))
+      .sort((a, b) => a.day.localeCompare(b.day));
+  }, [dailyPulled.data]);
+
+  /** Total puxado pela base de recebimento (soma de todas as entradas válidas). */
+  const totalPulledBase = useMemo(
+    () => (dailyPulled.data ?? []).reduce((a, r) => a + r.quantity, 0),
+    [dailyPulled.data],
+  );
 
   const totals = useMemo(() => {
     const t = {
@@ -166,6 +283,8 @@ export function FactoryPullDashboard() {
       balance: 0,
       excessQty: 0,
       required: 0,
+      openTasks: 0,
+      ordersWithOpenTasks: 0,
     };
     for (const r of rows) {
       t.orders += 1;
@@ -176,14 +295,22 @@ export function FactoryPullDashboard() {
       t.planned += r.planned_quantity;
       t.produced += r.confirmed_quantity;
       t.pulled += r.pulled_quantity;
-      t.balance += r.balance_quantity;
+      // Saldo = produzido (apontado) ainda não puxado (base Recebimento).
+      t.balance += Math.max(0, r.confirmed_quantity - r.pulled_quantity);
       t.excessQty += r.excess_quantity;
       t.required += r.required_quantity;
+      if ((r.open_task_count ?? 0) > 0) {
+        t.openTasks += r.open_task_count ?? 0;
+        t.ordersWithOpenTasks += 1;
+      }
     }
     return t;
   }, [rows]);
 
-  const efficiency = totals.required > 0 ? Math.min(100, (totals.pulled / totals.required) * 100) : 0;
+  const efficiency =
+    totals.produced > 0
+      ? Math.min(100, (totals.pulled / totals.produced) * 100)
+      : 0;
 
   const reconciliationStats = useMemo(() => {
     const rowsR = reconciliation.data ?? [];
@@ -198,7 +325,16 @@ export function FactoryPullDashboard() {
     return { ok, positive, negative, total: rowsR.length };
   }, [reconciliation.data]);
 
-  const dayPoints = useMemo(() => buildDayPoints(rows), [rows]);
+  const dayPoints = useMemo(
+    () =>
+      buildDayPoints(
+        rows,
+        debounced.period !== "custom"
+          ? periodToRange(debounced.period)
+          : { start: debounced.startDate, end: debounced.endDate },
+      ),
+    [rows, debounced],
+  );
 
   const statusPie = useMemo(() => {
     const countByStatus: Record<string, number> = {
@@ -280,6 +416,18 @@ export function FactoryPullDashboard() {
     navigate("/ordens");
   };
 
+  const openOpenTasks = () => {
+    // Vai para a tela de ordens com o filtro de status "em andamento", que
+    // agora considera ordens com tarefa de puxada em aberto.
+    setFilters({ ...filters, status: "in_progress" as GlobalFilters["status"] });
+    navigate("/ordens");
+  };
+
+  const openDivergence = (kind: "positive" | "negative") => {
+    setFilters({ ...filters, divergence: kind });
+    navigate("/ordens");
+  };
+
   const loading = metrics.isLoading;
 
   if (loading) {
@@ -345,6 +493,14 @@ export function FactoryPullDashboard() {
               onClick={() => openStatus("in_progress")}
             />
             <KpiCard
+              label="Tarefas de puxada em aberto"
+              value={fmtInt(totals.openTasks)}
+              icon={Timer}
+              tone="warning"
+              sub={`${fmtInt(totals.ordersWithOpenTasks)} ordens aguardando armazenagem`}
+              onClick={openOpenTasks}
+            />
+            <KpiCard
               label="Finalizadas"
               value={fmtInt(totals.completed)}
               icon={CheckCircle2}
@@ -362,24 +518,79 @@ export function FactoryPullDashboard() {
               label="Eficiência de puxada"
               value={fmtPercent(efficiency)}
               icon={TrendingUp}
-              sub="Puxado físico ÷ exigido"
+              sub="Puxado físico ÷ produzido (GMEIN)"
             />
             <KpiCard label="Qtd. planejada" value={fmtQty(totals.planned)} icon={Package} />
             <KpiCard label="Qtd. produzida" value={fmtQty(totals.produced)} icon={Factory} />
-            <KpiCard label="Qtd. puxada" value={fmtQty(totals.pulled)} icon={Boxes} tone="info" />
-            <KpiCard label="Saldo a puxar" value={fmtQty(totals.balance)} icon={Timer} tone="warning" />
+            <KpiCard
+              label="Qtd. puxada (Recebimento)"
+              value={fmtQty(totalPulledBase)}
+              icon={Boxes}
+              tone="info"
+            />
+            <KpiCard
+              label="Recebimentos estornados"
+              value={fmtInt(reversedStats.count)}
+              icon={RotateCcw}
+              tone={reversedStats.count > 0 ? "danger" : "success"}
+              sub={reversedStats.qty > 0 ? `${fmtQty(reversedStats.qty)} qtd` : "nenhum"}
+            />
+            <KpiCard
+              label="Saldo a puxar"
+              value={fmtQty(totals.balance)}
+              icon={Timer}
+              tone="warning"
+              sub="Produzido (GMEIN) − puxado (Recebimento)"
+            />
             <KpiCard label="Excesso" value={fmtQty(totals.excessQty)} icon={AlertTriangle} tone="danger" />
             <KpiCard
-              label="Divergência SAP × físico"
-              value={`${reconciliationStats.positive + reconciliationStats.negative}`}
+              label="Físico > SAP"
+              value={fmtInt(reconciliationStats.positive)}
               icon={Scale}
-              tone={reconciliationStats.positive + reconciliationStats.negative > 0 ? "warning" : "success"}
-              sub={reconciliationStats.total > 0 ? `de ${reconciliationStats.total} ordens` : "sem dados"}
+              tone="warning"
+              sub="Puxado a mais que o fornecimento"
+              onClick={() => openDivergence("positive")}
+            />
+            <KpiCard
+              label="Físico < SAP"
+              value={fmtInt(reconciliationStats.negative)}
+              icon={Scale}
+              tone="danger"
+              sub="Faltou puxar do fornecimento"
+              onClick={() => openDivergence("negative")}
             />
           </div>
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <ChartCard title="Planejado × Produzido × Puxado" sub="Por dia de criação da ordem">
+            <ChartCard
+              title="Planejado × Apontado × Puxado × Pendente"
+              sub="Planejado (Data-base iníc.) · Apontado/produzido (início real) · Puxado (Recebimento) · Pendente"
+              help={{
+                title: "Como ler este gráfico",
+                items: [
+                  {
+                    term: "Planejado",
+                    definition:
+                      "Quantidade planejada da ordem, agrupada pela data-base de início prevista.",
+                  },
+                  {
+                    term: "Apontado (produzido)",
+                    definition:
+                      "Quantidade boa confirmada da produção, agrupada pela data real de início.",
+                  },
+                  {
+                    term: "Puxado (Recebimento)",
+                    definition:
+                      "Quantidade de caixas recebidas no depósito, por data do recebimento.",
+                  },
+                  {
+                    term: "Pendente puxada",
+                    definition:
+                      "O que foi produzido mas ainda não puxado: produzido − puxado.",
+                  },
+                ],
+              }}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dayPoints}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -388,13 +599,32 @@ export function FactoryPullDashboard() {
                   <Tooltip {...CHART_TOOLTIP} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="planned" name="Planejado" fill={C.muted} radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="produced" name="Produzido" fill={C.primary} radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="pulled" name="Puxado" fill={C.success} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="produced" name="Apontado (produzido)" fill={C.primary} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="pulled" name="Puxado (Recebimento)" fill={C.success} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="pending" name="Pendente puxada" fill={C.danger} radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
 
-            <ChartCard title="Eficiência ao longo do tempo" sub="Eficiência diária (%). Máx. 100%">
+            <ChartCard
+              title="Eficiência ao longo do tempo"
+              sub="Puxado (Recebimento) ÷ produzido (GMEIN) por dia. Máx. 100%"
+              help={{
+                title: "Eficiência",
+                items: [
+                  {
+                    term: "Fórmula",
+                    definition:
+                      "Eficiência = puxado ÷ produzido, limitada a 100%. Usa o produzido real, não o planejado.",
+                  },
+                  {
+                    term: "Por que produzido?",
+                    definition:
+                      "Se planejou x e produziu y, o real da operação é y. A eficiência mede quanto do que foi realmente produzido já foi puxado.",
+                  },
+                ],
+              }}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={dayPoints}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -420,7 +650,25 @@ export function FactoryPullDashboard() {
               </ResponsiveContainer>
             </ChartCard>
 
-            <ChartCard title="Saldo a puxar por dia" sub="Saldo acumulado das ordens do período">
+            <ChartCard
+              title="Saldo a puxar por dia"
+              sub="Backlog: produzido (GMEIN) ainda não puxado (Recebimento), por dia de início real"
+              help={{
+                title: "Saldo a puxar",
+                items: [
+                  {
+                    term: "Definição",
+                    definition:
+                      "Para cada ordem: produzido − puxado. É o que já foi produzido e ainda aguarda ser puxado para o depósito.",
+                  },
+                  {
+                    term: "Estornos",
+                    definition:
+                      "Recebimentos estornados deixam de contar como puxados, aumentando o saldo (material devolvido à produção).",
+                  },
+                ],
+              }}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={dayPoints}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -432,7 +680,25 @@ export function FactoryPullDashboard() {
               </ResponsiveContainer>
             </ChartCard>
 
-            <ChartCard title="Excesso por material" sub="Top 10 materiais com maior excesso">
+            <ChartCard
+              title="Excesso por material"
+              sub="Top 10 materiais com maior excesso"
+              help={{
+                title: "Excesso por material",
+                items: [
+                  {
+                    term: "Definição",
+                    definition:
+                      "Quantidade puxada que ultrapassou o necessário da ordem (puxado − exigido). Indica material recebido a mais que o previsto.",
+                  },
+                  {
+                    term: "Onde agir",
+                    definition:
+                      "Materiais no topo concentram o maior volume de excesso e são os candidatos naturais a estorno/revisão.",
+                  },
+                ],
+              }}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={excessByMaterial} layout="vertical" margin={{ left: 30 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -444,11 +710,27 @@ export function FactoryPullDashboard() {
               </ResponsiveContainer>
             </ChartCard>
 
-            <ChartCard title="Puxado físico por dia" sub="Soma das entradas físicas válidas (Recebimento)">
+            <ChartCard
+              title="Puxado físico por dia"
+              sub="Quantidade de caixas recebidas (base Recebimento), por data de recebimento"
+              help={{
+                title: "Puxado físico",
+                items: [
+                  {
+                    term: "Fonte dos dados",
+                    definition:
+                      "Soma das caixas recebidas no depósito, por data do recebimento, considerando apenas as entradas válidas.",
+                  },
+                  {
+                    term: "Estornos",
+                    definition:
+                      "Entradas estornadas não aparecem neste gráfico — o valor reflete apenas o que permanece válido.",
+                  },
+                ],
+              }}
+            >
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={dayPoints.map((p) => ({ day: p.day, pulled: p.pulled }))}
-                >
+                <AreaChart data={pulledByDay}>
                   <defs>
                     <linearGradient id="gradPulled" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={C.success} stopOpacity={0.35} />
@@ -470,6 +752,16 @@ export function FactoryPullDashboard() {
               title="Top ordens com maior saldo"
               icon={<Timer className="h-4 w-4" />}
               rows={topBalanceOrders.map((r) => ({ key: r.order_number, label: r.order_number, value: r.balance_quantity }))}
+              help={{
+                title: "Top ordens com maior saldo",
+                items: [
+                  {
+                    term: "Definição",
+                    definition:
+                      "Ordens com maior quantidade produzida ainda não puxada (produzido − puxado). Priorize estas para reduzir o backlog.",
+                  },
+                ],
+              }}
               render={(r) => (
                 <Link
                   key={r.key}
@@ -485,6 +777,16 @@ export function FactoryPullDashboard() {
               title="Top materiais com maior saldo"
               icon={<Package className="h-4 w-4" />}
               rows={topBalanceMaterials}
+              help={{
+                title: "Top materiais com maior saldo",
+                items: [
+                  {
+                    term: "Definição",
+                    definition:
+                      "Materiais com maior volume produzido e ainda não puxado, somando todas as ordens do período.",
+                  },
+                ],
+              }}
               render={(r) => (
                 <div key={r.key} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                   <span className="truncate font-medium">{r.label}</span>
@@ -496,6 +798,16 @@ export function FactoryPullDashboard() {
               title="Top ordens com maior excesso"
               icon={<AlertTriangle className="h-4 w-4" />}
               rows={topExcessOrders.map((r) => ({ key: r.order_number, label: r.order_number, value: r.excess_quantity }))}
+              help={{
+                title: "Top ordens com maior excesso",
+                items: [
+                  {
+                    term: "Definição",
+                    definition:
+                      "Ordens com maior quantidade puxada acima do exigido. Úteis para identificar onde houve recebimento a mais.",
+                  },
+                ],
+              }}
               render={(r) => (
                 <Link
                   key={r.key}
@@ -510,8 +822,30 @@ export function FactoryPullDashboard() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <Card className="flex flex-col gap-2 p-4">
-              <p className="text-sm font-semibold">Ordens por status</p>
+            <InfoCard
+              title="Ordens por status"
+              help={{
+                title: "Ordens por status",
+                items: [
+                  {
+                    term: "Não iniciada",
+                    definition: "Nenhuma caixa puxada ainda para a ordem.",
+                  },
+                  {
+                    term: "Em andamento",
+                    definition: "Já houve puxada, mas ainda falta para atingir o exigido.",
+                  },
+                  {
+                    term: "Finalizada",
+                    definition: "A quantidade puxada atingiu exatamente o exigido.",
+                  },
+                  {
+                    term: "Excesso",
+                    definition: "Foi puxado mais do que o exigido para a ordem.",
+                  },
+                ],
+              }}
+            >
               <div className="flex flex-col gap-1.5 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-2 text-muted-foreground">
@@ -542,11 +876,21 @@ export function FactoryPullDashboard() {
                   <span className="font-medium tabular-nums">{fmtInt(totals.excessCount)}</span>
                 </div>
               </div>
-            </Card>
+            </InfoCard>
             <RankList
               title="Top materiais com maior excesso"
               icon={<AlertTriangle className="h-4 w-4" />}
               rows={topExcessMaterials}
+              help={{
+                title: "Top materiais com maior excesso",
+                items: [
+                  {
+                    term: "Definição",
+                    definition:
+                      "Materiais com maior volume puxado acima do exigido, somando todas as ordens do período.",
+                  },
+                ],
+              }}
               render={(r) => (
                 <div key={r.key} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                   <span className="truncate font-medium">{r.label}</span>
@@ -554,8 +898,28 @@ export function FactoryPullDashboard() {
                 </div>
               )}
             />
-            <Card className="flex flex-col gap-2 p-4">
-              <p className="text-sm font-semibold">Divergência SAP × físico</p>
+            <InfoCard
+              title="Divergência SAP × físico"
+              help={{
+                title: "Divergência SAP × físico",
+                items: [
+                  {
+                    term: "OK",
+                    definition: "A quantidade fornecida pelo SAP é igual à puxada física.",
+                  },
+                  {
+                    term: "Positiva (físico > SAP)",
+                    definition:
+                      "Foi puxado mais do que o SAP registrou como fornecido — sobra física.",
+                  },
+                  {
+                    term: "Negativa (físico < SAP)",
+                    definition:
+                      "O SAP registrou mais do que foi puxado — falta física.",
+                  },
+                ],
+              }}
+            >
               <div className="flex flex-col gap-1.5 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">OK</span>
@@ -570,8 +934,66 @@ export function FactoryPullDashboard() {
                   <span className="font-medium tabular-nums text-danger">{fmtInt(reconciliationStats.negative)}</span>
                 </div>
               </div>
-            </Card>
+            </InfoCard>
           </div>
+
+          <Card className="p-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <p className="flex items-center gap-2 text-sm font-semibold">
+                <RotateCcw className="h-4 w-4 text-danger" /> Recebimentos estornados
+                <Badge variant="danger">{fmtInt(reversedStats.count)}</Badge>
+              </p>
+              <InfoPopover
+                title="Recebimentos estornados"
+                items={[
+                  {
+                    term: "O que é",
+                    definition:
+                      "Paletes cujo recebimento foi estornado (devolvido à produção). Deixam de contar como puxados.",
+                  },
+                  {
+                    term: "Como usar",
+                    definition:
+                      "Confira documento, ordem, quantidade e motivo para identificar e corrigir recebimentos feitos a mais ou por engano.",
+                  },
+                ]}
+              />
+            </div>
+            {reversedRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Nenhum recebimento estornado no período.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Documento</TableHead>
+                      <TableHead>Ordem</TableHead>
+                      <TableHead>Material</TableHead>
+                      <TableHead>Lote</TableHead>
+                      <TableHead className="text-right">Qtd.</TableHead>
+                      <TableHead>Motivo</TableHead>
+                      <TableHead>Data do estorno</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reversedRows.slice(0, 50).map((r) => (
+                      <TableRow key={r.id}>
+                        <TableCell className="font-medium">{r.document_number}</TableCell>
+                        <TableCell>{r.production_order ?? "—"}</TableCell>
+                        <TableCell>{r.material_code}</TableCell>
+                        <TableCell>{r.lot ?? "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{fmtQty(r.quantity)}</TableCell>
+                        <TableCell>{r.reversal_reason ?? "—"}</TableCell>
+                        <TableCell>{fmtDateTime(r.reversed_at)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </Card>
         </>
       )}
     </div>
