@@ -114,9 +114,6 @@ function TimelineStep({
 function taskPullAt(t: WarehouseTask): Date | null {
   return parseLocalDateTime(t.creation_date, t.creation_time);
 }
-function taskStorageAt(t: WarehouseTask): Date | null {
-  return parseLocalDateTime(t.confirmation_date, t.confirmation_time);
-}
 
 export function OrderDetail() {
   const { orderNumber = "" } = useParams();
@@ -161,7 +158,13 @@ export function OrderDetail() {
 
   const row = metrics.data;
   const receiptList = useMemo(() => receipts.data ?? [], [receipts.data]);
-  const taskList = useMemo(() => tasks.data ?? [], [tasks.data]);
+  // A tabela "Pallets / UC da ordem" mostra somente as tarefas de puxada (1020).
+  // As armazenagens (1012) são contabilizadas no 1020 e só interessam na
+  // performance dos operadores.
+  const taskList = useMemo(
+    () => (tasks.data ?? []).filter((t) => t.process_type === "1020"),
+    [tasks.data],
+  );
 
   const lastStorageAt = useMemo(() => {
     let max: Date | null = null;
@@ -325,18 +328,13 @@ export function OrderDetail() {
                   <TableHead>Material</TableHead>
                   <TableHead>Lote</TableHead>
                   <TableHead className="text-right">Qtd.</TableHead>
-                  <TableHead>Processo</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Puxada</TableHead>
-                  <TableHead>Armazenagem</TableHead>
-                  <TableHead className="text-right">Espera</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {taskList.map((t) => {
                   const pullAt = taskPullAt(t);
-                  const storageAt = taskStorageAt(t);
-                  const wait = minutesBetween(pullAt, storageAt);
                   return (
                     <TableRow key={t.id}>
                       <TableCell className="font-medium">{t.source_uc ?? "—"}</TableCell>
@@ -344,11 +342,6 @@ export function OrderDetail() {
                       <TableCell>{t.material_code ?? "—"}</TableCell>
                       <TableCell>{t.lot ?? "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{fmtQty(t.quantity)}</TableCell>
-                      <TableCell>
-                        <Badge variant={t.process_type === "1020" ? "info" : "secondary"}>
-                          {t.process_type || "—"}
-                        </Badge>
-                      </TableCell>
                       <TableCell>
                         <TaskStatusBadge status={t.task_status} />
                       </TableCell>
@@ -361,25 +354,13 @@ export function OrderDetail() {
                           {fmtDateTime(pullAt?.toISOString())}
                         </span>
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          <User className="h-3 w-3" />
-                          {t.confirmed_by ?? "—"}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {fmtDateTime(storageAt?.toISOString())}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {wait !== null && wait >= 0 ? fmtDurationMinutes(wait) : "—"}
-                      </TableCell>
                     </TableRow>
                   );
                 })}
                 {taskList.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
-                      Nenhuma tarefa MON vinculada a esta ordem.
+                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                      Nenhuma tarefa de puxada (1020) vinculada a esta ordem.
                     </TableCell>
                   </TableRow>
                 ) : null}
