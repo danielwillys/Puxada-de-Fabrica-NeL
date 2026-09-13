@@ -544,18 +544,6 @@ export function FactoryPullDashboard() {
             />
             <KpiCard label="Excesso" value={fmtQty(totals.excessQty)} icon={AlertTriangle} tone="danger" />
             <KpiCard
-              label="Divergência SAP × físico"
-              value={`${reconciliationStats.positive + reconciliationStats.negative}`}
-              icon={Scale}
-              tone={reconciliationStats.positive + reconciliationStats.negative > 0 ? "warning" : "success"}
-              sub={reconciliationStats.total > 0 ? `de ${reconciliationStats.total} ordens` : "sem dados"}
-              onClick={() =>
-                reconciliationStats.positive + reconciliationStats.negative > 0
-                  ? openDivergence("positive")
-                  : openStatus("completed")
-              }
-            />
-            <KpiCard
               label="Físico > SAP"
               value={fmtInt(reconciliationStats.positive)}
               icon={Scale}
