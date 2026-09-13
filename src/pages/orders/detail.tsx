@@ -125,6 +125,8 @@ export function OrderDetail() {
   const isAdmin = profile?.role === "admin";
   const canReversal = usePermission("orders:reversal");
   const canReversalAction = isAdmin || canReversal;
+  const canNormalize = usePermission("orders:normalize");
+  const canNormalizeAction = isAdmin || canNormalize;
   const metrics = useOrderMetrics(orderNumber);
   const receipts = useOrderReceipts(orderNumber);
   const tasks = useOrderTasks(orderNumber);
@@ -303,7 +305,7 @@ export function OrderDetail() {
               <Scale className="h-3 w-3" /> Saldo normalizado
             </Badge>
           ) : null}
-          {isAdmin ? (
+          {canNormalizeAction ? (
             <Button
               variant={row.normalized_saldo ? "outline" : "secondary"}
               size="sm"

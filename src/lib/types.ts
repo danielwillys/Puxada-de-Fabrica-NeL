@@ -45,6 +45,7 @@ export const PERMISSIONS: { key: string; label: string; group: string }[] = [
   { key: "users", label: "Usuários", group: "Administração" },
   { key: "roles", label: "Perfis e permissões", group: "Administração" },
   { key: "orders:reversal", label: "Estornar recebimentos", group: "Ações" },
+  { key: "orders:normalize", label: "Normalizar saldo da ordem", group: "Ações" },
   { key: "shifts:reprocess", label: "Reprocessar classificação", group: "Ações" },
 ];
 
