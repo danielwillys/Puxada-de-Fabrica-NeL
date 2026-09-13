@@ -49,6 +49,8 @@ export interface GlobalFilters {
   operationalDay: string;
   /** Divergência SAP × físico ("" = todas, positive, negative, ok). */
   divergence: "" | "positive" | "negative" | "ok";
+  /** Somente ordens com tarefa de puxada em aberto (analista). */
+  openTasksOnly: boolean;
 }
 
 export const EMPTY_FILTERS: GlobalFilters = {
@@ -62,6 +64,7 @@ export const EMPTY_FILTERS: GlobalFilters = {
   shiftId: "",
   operationalDay: "",
   divergence: "",
+  openTasksOnly: false,
 };
 
 export function periodToRange(
@@ -126,6 +129,8 @@ type Builder = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   lte: (col: string, v: string) => any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  gt: (col: string, v: number) => any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ilike: (col: string, v: string) => any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   eq: (col: string, v: unknown) => any;
@@ -156,6 +161,7 @@ function applyFilters(q: Builder, f: GlobalFilters): Builder {
   const lot = f.lot.trim();
   if (lot) q = q.ilike("lot", `%${lot}%`);
   if (f.status) q = q.eq("status", f.status);
+  if (f.openTasksOnly) q = q.gt("open_task_count", 0);
   return q;
 }
 

@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 interface FilterBarProps {
@@ -23,6 +24,8 @@ interface FilterBarProps {
   className?: string;
   /** Mostra os filtros de turno e dia operacional (telas de performance). */
   showShiftFilters?: boolean;
+  /** Mostra o filtro "somente ordens com tarefa em aberto" (tela de ordens). */
+  showOpenTasks?: boolean;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -36,7 +39,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-export function FilterBar({ filters, onChange, className, showShiftFilters = false }: FilterBarProps) {
+export function FilterBar({ filters, onChange, className, showShiftFilters = false, showOpenTasks = false }: FilterBarProps) {
   const set = (patch: Partial<GlobalFilters>) => onChange({ ...filters, ...patch });
   const shifts = useShifts();
 
@@ -190,6 +193,18 @@ export function FilterBar({ filters, onChange, className, showShiftFilters = fal
         </Select>
       </Field>
 
+      {showOpenTasks ? (
+        <Field label="Tarefa em aberto">
+          <div className="flex h-9 items-center gap-2 rounded-md border px-3">
+            <Switch
+              checked={filters.openTasksOnly}
+              onCheckedChange={(v) => set({ openTasksOnly: v })}
+            />
+            <span className="text-xs text-muted-foreground">Só com tarefa em aberto</span>
+          </div>
+        </Field>
+      ) : null}
+
       <Button
         type="button"
         variant="outline"
@@ -207,6 +222,7 @@ export function FilterBar({ filters, onChange, className, showShiftFilters = fal
             shiftId: "",
             operationalDay: "",
             divergence: "",
+            openTasksOnly: false,
           })
         }
       >

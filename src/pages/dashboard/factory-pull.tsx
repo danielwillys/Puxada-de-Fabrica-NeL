@@ -417,9 +417,10 @@ export function FactoryPullDashboard() {
   };
 
   const openOpenTasks = () => {
-    // Vai para a tela de ordens com o filtro de status "em andamento", que
-    // agora considera ordens com tarefa de puxada em aberto.
-    setFilters({ ...filters, status: "in_progress" as GlobalFilters["status"] });
+    // Vai para a tela de ordens já filtrada somente pelas que têm tarefa de
+    // puxada em aberto (o analista consegue tratá-las sem procurar entre as
+    // demais ordens em andamento).
+    setFilters({ ...filters, openTasksOnly: true });
     navigate("/ordens");
   };
 
