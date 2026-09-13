@@ -80,6 +80,14 @@ function dayRef(value: string | null, fallback: string | null): string {
   return (value ?? fallback ?? "").slice(0, 10) || "sem data";
 }
 
+/** Data de hoje (yyyy-mm-dd, horário local) — limite para não exibir dias futuros. */
+function todayStr(): string {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
 function buildDayPoints(rows: ProductionOrderMetric[]): DayPoint[] {
   const map = new Map<string, DayPoint>();
   const add = (day: string, patch: Partial<DayPoint>) => {
@@ -119,6 +127,8 @@ function buildDayPoints(rows: ProductionOrderMetric[]): DayPoint[] {
       efficiency:
         p.produced > 0 ? Math.min(100, Math.round((p.pulled / p.produced) * 100)) : 0,
     }))
+    // Não exibe dias que ainda não chegaram (o planejado pode ter data futura).
+    .filter((p) => p.day === "sem data" || p.day <= todayStr())
     .sort((a, b) => a.day.localeCompare(b.day));
 }
 
@@ -482,22 +492,22 @@ export function FactoryPullDashboard() {
                   {
                     term: "Planejado",
                     definition:
-                      "Quantidade planejada da ordem (COOISPI), agrupada pela Data-base iníc. (planned_start).",
+                      "Quantidade planejada da ordem, agrupada pela data-base de início prevista.",
                   },
                   {
                     term: "Apontado (produzido)",
                     definition:
-                      "Quantidade boa confirmada (GMEIN), agrupada pela Data início real da ordem.",
+                      "Quantidade boa confirmada da produção, agrupada pela data real de início.",
                   },
                   {
                     term: "Puxado (Recebimento)",
                     definition:
-                      "Quantidade de caixas recebidas na base de Recebimento, por data do recebimento.",
+                      "Quantidade de caixas recebidas no depósito, por data do recebimento.",
                   },
                   {
                     term: "Pendente puxada",
                     definition:
-                      "O que foi produzido mas ainda não puxado: max(0, produzido − puxado).",
+                      "O que foi produzido mas ainda não puxado: produzido − puxado.",
                   },
                 ],
               }}
@@ -526,7 +536,7 @@ export function FactoryPullDashboard() {
                   {
                     term: "Fórmula",
                     definition:
-                      "Eficiência = puxado (base Recebimento) ÷ produzido (quantidade boa confirmada GMEIN), limitada a 100%. Usa o produzido real, não o planejado.",
+                      "Eficiência = puxado ÷ produzido, limitada a 100%. Usa o produzido real, não o planejado.",
                   },
                   {
                     term: "Por que produzido?",
@@ -570,12 +580,12 @@ export function FactoryPullDashboard() {
                   {
                     term: "Definição",
                     definition:
-                      "Para cada ordem: max(0, produzido (quantidade boa confirmada) − puxado (base Recebimento)). É o que foi produzido e ainda aguarda puxada.",
+                      "Para cada ordem: produzido − puxado. É o que já foi produzido e ainda aguarda ser puxado para o depósito.",
                   },
                   {
                     term: "Estornos",
                     definition:
-                      "Recebimentos estornados deixam de contar no puxado, aumentando o saldo (material devolvido à produção).",
+                      "Recebimentos estornados deixam de contar como puxados, aumentando o saldo (material devolvido à produção).",
                   },
                 ],
               }}
@@ -612,12 +622,12 @@ export function FactoryPullDashboard() {
                   {
                     term: "Fonte dos dados",
                     definition:
-                      "Soma das quantidades da base de Recebimento (production_receipts) por data do recebimento (goods_receipt_date), considerando apenas entradas válidas.",
+                      "Soma das caixas recebidas no depósito, por data do recebimento, considerando apenas as entradas válidas.",
                   },
                   {
                     term: "Estornos",
                     definition:
-                      "Entradas estornadas (is_valid = false) não aparecem neste gráfico — o valor reflete apenas o que permanece válido.",
+                      "Entradas estornadas não aparecem neste gráfico — o valor reflete apenas o que permanece válido.",
                   },
                 ],
               }}

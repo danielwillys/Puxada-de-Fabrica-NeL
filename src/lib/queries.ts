@@ -537,18 +537,19 @@ export function usePerformanceTasks(filters: GlobalFilters) {
           )
           .order("id", { ascending: true })
           .range(from, from + pageSize - 1);
-        // Each or() composes with AND — day range and shift filter stay independent.
-        // Quando um dia operacional é selecionado, ele é a restrição mais específica:
-        // filtra estritamente as tarefas daquele dia (sem arrastar dias vizinhos).
+        // O período usa as DATAS REAIS da tarefa (não o dia operacional):
+        // puxada = data de criação da tarefa 1020; armazenagem = data de confirmação
+        // da 1012. Assim os totais batem com o relatório da operação.
         if (filters.operationalDay) {
           q = q.or(
-            `and(process_type.eq.1020,operational_pull_day.eq.${filters.operationalDay}),and(process_type.eq.1012,operational_storage_day.eq.${filters.operationalDay})`,
+            `and(process_type.eq.1020,creation_date.eq.${filters.operationalDay}),and(process_type.eq.1012,confirmation_date.eq.${filters.operationalDay})`,
           );
         } else if (range.start && range.end) {
           q = q.or(
-            `and(operational_pull_day.gte.${range.start},operational_pull_day.lte.${range.end}),and(operational_storage_day.gte.${range.start},operational_storage_day.lte.${range.end})`,
+            `and(process_type.eq.1020,creation_date.gte.${range.start},creation_date.lte.${range.end}),and(process_type.eq.1012,confirmation_date.gte.${range.start},confirmation_date.lte.${range.end})`,
           );
         }
+        // Cada or() compõe com AND — o período e o turno ficam independentes.
         if (filters.shiftId) {
           q = q.or(
             `pull_shift_id.eq.${filters.shiftId},storage_shift_id.eq.${filters.shiftId}`,

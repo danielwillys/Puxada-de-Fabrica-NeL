@@ -25,17 +25,17 @@ export function PerformancePage() {
             {
               term: "Paletes puxados / armazenados",
               definition:
-                "Contagem de tarefas MON: 1020 = puxada (autor) e 1012 = armazenagem (confirmado por). O sistema vincula o operador sempre que o nome casa, então os totais batem com o relatório real.",
+                "Puxada = tarefa em que o operador retirou o palete da produção. Armazenagem = tarefa em que o palete foi guardado no depósito. Os totais vêm do relatório de movimentação.",
             },
             {
               term: "Tempo médio",
               definition:
-                "Média do tempo entre puxada e armazenagem de cada palete, pareados por lote (FIFO). Só existe para quem tem pares puxada→armazenagem.",
+                "Tempo médio entre puxar e armazenar cada palete. Só existe para operadores que puxam paletes que depois são armazenados.",
             },
             {
               term: "P90",
               definition:
-                "Percentil 90 do tempo puxada→armazenagem: em quanto tempo 90% dos paletes foram armazenados. É a medida de 'o pior dos 90%' — menos sensível a picos do que a média.",
+                "Percentil 90: o tempo em que 90% dos paletes foram armazenados. Ex.: P90 de 45 min significa que 90% dos paletes levaram até 45 min entre a puxada e a armazenagem.",
             },
             {
               term: "% SLA",
@@ -45,7 +45,7 @@ export function PerformancePage() {
             {
               term: "Sem turno (não classificado)",
               definition:
-                "Tarefas que existem no período mas não caem na janela de horário de nenhum turno alocado. Elas são contadas nos totais para não haver divergência com a planilha.",
+                "Tarefas que existem no período mas não caem na janela de horário de nenhum turno. Elas são contadas nos totais para não haver divergência com o relatório da operação.",
             },
           ]}
         />
