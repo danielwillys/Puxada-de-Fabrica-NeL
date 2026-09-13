@@ -96,14 +96,22 @@ Deno.serve(async (req) => {
         if (!created.user) {
           return json(corsHeaders, { ok: false, error: "Falha ao criar usuário." }, 500);
         }
-        const { error: profErr } = await supabase.from("profiles").insert({
-          id: created.user.id,
-          email: i.email.trim().toLowerCase(),
-          name: i.name.trim(),
-          role: roleRow.role,
-          role_id: roleRow.id,
-          active: true,
-        });
+        // The on_auth_user_created trigger already inserts the profile row
+        // (role 'operator'); upsert so we set the chosen role/role_id instead
+        // of hitting a duplicate primary key.
+        const { error: profErr } = await supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: created.user.id,
+              email: i.email.trim().toLowerCase(),
+              name: i.name.trim(),
+              role: roleRow.role,
+              role_id: roleRow.id,
+              active: true,
+            },
+            { onConflict: "id" },
+          );
         if (profErr) {
           // Rollback the auth user so the account does not exist without a profile.
           await supabase.auth.admin.deleteUser(created.user.id);

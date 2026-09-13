@@ -1,0 +1,7 @@
+-- Reset de todas as alocações de turno (operador x turno) para o usuário
+-- reconfigurar do zero. Mantém a auditoria do que foi apagado.
+delete from public.operator_shift_history;
+
+-- Limpa a classificação de turno e reprocessa: sem alocações, nenhuma tarefa
+-- recebe turno (operador continua vinculado pelo nome).
+select public.reprocess_shift_classification();

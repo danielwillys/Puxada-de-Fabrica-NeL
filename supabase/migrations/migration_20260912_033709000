@@ -1,0 +1,70 @@
+-- Classificação em duas etapas:
+-- 1) SEMPRE vincula o operador quando autor/confirmado por casa com um operador
+--    registrado (independe da janela de horário) -> os totais por operador
+--    passam a bater com o relatório real (SAP).
+-- 2) Atribui o turno apenas quando a data/hora da tarefa cai na janela do turno
+--    da alocação vigente do operador.
+create or replace function public.classify_warehouse_task_shifts()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  -- (1a) Operador de puxada (1020) sempre que o autor casar com um operador.
+  update public.warehouse_tasks t
+  set pull_operator_id = m.operator_id
+  from (
+    select t2.id as task_id, o.id as operator_id
+    from public.warehouse_tasks t2
+    join public.operators o
+      on (o.name = trim(coalesce(t2.author,'')) or o.employee_number = trim(coalesce(t2.author,'')))
+    where t2.process_type = '1020'
+  ) m
+  where t.id = m.task_id;
+
+  -- (1b) Operador de armazenagem (1012) sempre que o confirmado por casar.
+  update public.warehouse_tasks t
+  set storage_operator_id = m.operator_id
+  from (
+    select t2.id as task_id, o.id as operator_id
+    from public.warehouse_tasks t2
+    join public.operators o
+      on (o.name = trim(coalesce(t2.confirmed_by,'')) or o.employee_number = trim(coalesce(t2.confirmed_by,'')))
+    where t2.process_type = '1012'
+  ) m
+  where t.id = m.task_id;
+
+  -- (2a) Turno da puxada: somente quando a hora cair na janela do turno.
+  update public.warehouse_tasks t
+  set pull_shift_id = m.shift_id,
+      operational_pull_day = m.operational_day
+  from (
+    select t2.id as task_id, o.id as operator_id, g.shift_id, g.operational_day
+    from public.warehouse_tasks t2
+    join public.operators o
+      on (o.name = trim(coalesce(t2.author,'')) or o.employee_number = trim(coalesce(t2.author,'')))
+    cross join lateral public.get_shift_for_datetime(o.id, (t2.creation_date + t2.creation_time)::timestamp) g
+    where t2.process_type = '1020'
+      and t2.creation_date is not null and t2.creation_time is not null
+      and g.shift_id is not null
+  ) m
+  where t.id = m.task_id;
+
+  -- (2b) Turno da armazenagem.
+  update public.warehouse_tasks t
+  set storage_shift_id = m.shift_id,
+      operational_storage_day = m.operational_day
+  from (
+    select t2.id as task_id, o.id as operator_id, g.shift_id, g.operational_day
+    from public.warehouse_tasks t2
+    join public.operators o
+      on (o.name = trim(coalesce(t2.confirmed_by,'')) or o.employee_number = trim(coalesce(t2.confirmed_by,'')))
+    cross join lateral public.get_shift_for_datetime(o.id, (t2.confirmation_date + t2.confirmation_time)::timestamp) g
+    where t2.process_type = '1012'
+      and t2.confirmation_date is not null and t2.confirmation_time is not null
+      and g.shift_id is not null
+  ) m
+  where t.id = m.task_id;
+$$;
+
+select public.reprocess_shift_classification();

@@ -1,0 +1,21 @@
+-- reprocess_shift_classification: UPDATE sem WHERE é bloqueado pelo PostgREST
+-- (erro "UPDATE requires a WHERE clause"). Adiciona WHERE true para satisfazer
+-- a regra de segurança sem mudar o comportamento.
+create or replace function public.reprocess_shift_classification()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.warehouse_tasks
+  set pull_operator_id = null,
+      storage_operator_id = null,
+      pull_shift_id = null,
+      storage_shift_id = null,
+      operational_pull_day = null,
+      operational_storage_day = null
+  where true;
+  perform public.classify_warehouse_task_shifts();
+end;
+$$;
