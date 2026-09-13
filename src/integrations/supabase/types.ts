@@ -3522,6 +3522,9 @@ export type Database = {
           lot: string | null
           material_code: string
           material_description: string | null
+          normalized_at: string | null
+          normalized_reason: string | null
+          normalized_saldo: boolean
           order_number: string
           planned_quantity: number
           planned_start: string | null
@@ -3541,6 +3544,9 @@ export type Database = {
           lot?: string | null
           material_code: string
           material_description?: string | null
+          normalized_at?: string | null
+          normalized_reason?: string | null
+          normalized_saldo?: boolean
           order_number: string
           planned_quantity?: number
           planned_start?: string | null
@@ -3560,6 +3566,9 @@ export type Database = {
           lot?: string | null
           material_code?: string
           material_description?: string | null
+          normalized_at?: string | null
+          normalized_reason?: string | null
+          normalized_saldo?: boolean
           order_number?: string
           planned_quantity?: number
           planned_start?: string | null
@@ -3974,6 +3983,9 @@ export type Database = {
           lot: string | null
           material_code: string | null
           material_description: string | null
+          normalized_at: string | null
+          normalized_reason: string | null
+          normalized_saldo: boolean | null
           open_task_count: number | null
           order_number: string | null
           planned_quantity: number | null

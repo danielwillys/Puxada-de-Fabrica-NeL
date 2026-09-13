@@ -118,7 +118,7 @@ export function useDebouncedFilters(initial: GlobalFilters, delay = 300) {
 }
 
 const METRICS_SELECT =
-  "id,order_number,material_code,material_description,unit,lot,planned_quantity,confirmed_quantity,sap_supplied_quantity,required_quantity,pulled_quantity,balance_quantity,excess_quantity,pull_efficiency_percent,status,actual_start,actual_end,planned_start,created_date,first_pull_at,last_pull_at,open_task_count";
+  "id,order_number,material_code,material_description,unit,lot,planned_quantity,confirmed_quantity,sap_supplied_quantity,required_quantity,pulled_quantity,balance_quantity,excess_quantity,pull_efficiency_percent,status,actual_start,actual_end,planned_start,created_date,first_pull_at,last_pull_at,open_task_count,normalized_saldo,normalized_reason,normalized_at";
 
 type Builder = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

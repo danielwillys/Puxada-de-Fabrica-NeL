@@ -72,6 +72,10 @@ export interface ProductionOrderMetric {
   last_pull_at: string | null;
   /** Quantidade de tarefas de puxada (1020) em aberto/espera para a ordem. */
   open_task_count: number | null;
+  /** Se o analista normalizou o saldo (ignora excesso/falta após análise). */
+  normalized_saldo: boolean | null;
+  normalized_reason: string | null;
+  normalized_at: string | null;
 }
 
 export interface ProductionReceipt {

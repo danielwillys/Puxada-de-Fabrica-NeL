@@ -13,6 +13,7 @@ import {
   Loader2,
   Package,
   RotateCcw,
+  Scale,
   User,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -133,6 +134,32 @@ export function OrderDetail() {
     receipt: ProductionReceipt;
     reason: string;
   } | null>(null);
+
+  const [normalizeOpen, setNormalizeOpen] = useState(false);
+  const [normalizeReason, setNormalizeReason] = useState("Divergência analisada e aceita");
+
+  const toggleNormalize = useMutation({
+    mutationFn: async () => {
+      if (!row) return;
+      const { error } = await supabase
+        .from("production_orders")
+        .update({
+          normalized_saldo: !row.normalized_saldo,
+          normalized_reason: row.normalized_saldo ? null : normalizeReason,
+          normalized_at: row.normalized_saldo ? null : new Date().toISOString(),
+        })
+        .eq("order_number", orderNumber);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success(row?.normalized_saldo ? "Normalização removida." : "Saldo normalizado (divergência aceita).");
+      setNormalizeOpen(false);
+      qc.invalidateQueries({ queryKey: ["order-metrics", orderNumber] });
+      qc.invalidateQueries({ queryKey: ["audit"] });
+      qc.invalidateQueries({ queryKey: ["metrics"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Não foi possível normalizar."),
+  });
 
   const toggleReceipt = useMutation({
     mutationFn: async (r: ProductionReceipt) => {
@@ -270,6 +297,27 @@ export function OrderDetail() {
           Ordem {row.order_number}
         </h1>
         <StatusBadge status={row.status} />
+        <div className="flex gap-2">
+          {row.normalized_saldo ? (
+            <Badge variant="info" title={row.normalized_reason ?? undefined}>
+              <Scale className="h-3 w-3" /> Saldo normalizado
+            </Badge>
+          ) : null}
+          {isAdmin ? (
+            <Button
+              variant={row.normalized_saldo ? "outline" : "secondary"}
+              size="sm"
+              className="h-8"
+              onClick={() => {
+                if (row.normalized_saldo) toggleNormalize.mutate();
+                else setNormalizeOpen(true);
+              }}
+            >
+              <Scale className="h-3.5 w-3.5" />
+              {row.normalized_saldo ? "Remover normalização" : "Normalizar saldo"}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <Card className="p-4">
@@ -528,6 +576,56 @@ export function OrderDetail() {
                 <ArrowLeftRight className="h-4 w-4" />
               )}
               {receiptAction?.receipt.is_valid ? "Confirmar estorno" : "Reativar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Normalização de saldo (divergência SAP × físico analisada e aceita) */}
+      <Dialog open={normalizeOpen} onOpenChange={setNormalizeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Normalizar saldo da ordem</DialogTitle>
+            <DialogDescription>
+              Após a análise da divergência SAP × físico, o sistema passa a{" "}
+              <strong>ignorar o excesso ou a falta de saldo</strong> desta ordem — ela deixa de
+              contar como "Com excesso" ou com saldo pendente. A ação é registrada na auditoria.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-1.5">
+            <Label>Motivo da normalização</Label>
+            <Select value={normalizeReason} onValueChange={setNormalizeReason}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Divergência analisada e aceita">
+                  Divergência analisada e aceita
+                </SelectItem>
+                <SelectItem value="Excesso devolvido à produção">
+                  Excesso devolvido à produção
+                </SelectItem>
+                <SelectItem value="Falta compensada em outra ordem">
+                  Falta compensada em outra ordem
+                </SelectItem>
+                <SelectItem value="Recebimento corrigido">Recebimento corrigido</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNormalizeOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => toggleNormalize.mutate()}
+              disabled={toggleNormalize.isPending}
+            >
+              {toggleNormalize.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Scale className="h-4 w-4" />
+              )}
+              Confirmar normalização
             </Button>
           </DialogFooter>
         </DialogContent>

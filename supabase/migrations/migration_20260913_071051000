@@ -1,0 +1,34 @@
+-- Normalização de saldo/divergência: quando o analista analisa uma ordem e
+-- confirma que o excesso ou a falta de saldo SAP é aceitável (ex.: palete
+-- devolvido/estornado), o sistema passa a ignorar esse excesso/falta e trata a
+-- ordem conforme o saldo real normalizado.
+alter table public.production_orders
+  add column if not exists normalized_saldo boolean not null default false,
+  add column if not exists normalized_reason text,
+  add column if not exists normalized_at timestamptz;
+
+-- Auditoria de normalização (reutiliza o trigger de auditoria de perfis? não,
+-- usa o de dados mestre não se aplica a production_orders) — registra manualmente.
+create or replace function public.log_order_normalization()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.normalized_saldo is distinct from old.normalized_saldo or
+     new.normalized_reason is distinct from old.normalized_reason then
+    insert into public.audit_logs (user_id, action, entity, entity_id, old_value, new_value)
+    values (auth.uid(),
+            case when new.normalized_saldo then 'normalizar_saldo' else 'desnormalizar_saldo' end,
+            'production_orders', new.order_number,
+            jsonb_build_object('normalized_saldo', old.normalized_saldo, 'normalized_reason', old.normalized_reason),
+            jsonb_build_object('normalized_saldo', new.normalized_saldo, 'normalized_reason', new.normalized_reason));
+  end if;
+  return new;
+end;
+$$;
+
+create trigger production_orders_normalization_audit
+  after update on public.production_orders
+  for each row execute function public.log_order_normalization();

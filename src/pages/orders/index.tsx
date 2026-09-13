@@ -258,21 +258,20 @@ export function OrdersPage() {
                       </TableCell>
                       <TableCell>{row.lot ?? "—"}</TableCell>
                       <TableCell>{row.unit ?? "—"}</TableCell>
-                      {[
-                        row.planned_quantity,
-                        row.confirmed_quantity,
-                        row.required_quantity,
-                        row.sap_supplied_quantity,
-                        row.pulled_quantity,
-                        row.balance_quantity,
-                        row.excess_quantity,
-                      ].map((v, i) => (
-                        <TableCell key={i} className="whitespace-nowrap text-right tabular-nums">
-                          {fmtQty(v)}
-                        </TableCell>
-                      ))}
-                      <TableCell className="text-right tabular-nums">
-                        {fmtPercent(row.pull_efficiency_percent)}
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.planned_quantity)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.confirmed_quantity)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.required_quantity)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.sap_supplied_quantity)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.pulled_quantity)}
                       </TableCell>
                       <TableCell>
                         {(() => {
@@ -291,6 +290,15 @@ export function OrdersPage() {
                             </span>
                           );
                         })()}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.balance_quantity)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums">
+                        {fmtQty(row.excess_quantity)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {fmtPercent(row.pull_efficiency_percent)}
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={row.status} />
