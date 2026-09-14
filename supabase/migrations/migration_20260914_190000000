@@ -1,0 +1,130 @@
+-- ============================================================
+-- CONVERGE.AI — permissões liberadas pelo painel (Perfis e Permissões)
+-- ============================================================
+
+-- "has_permission" permite que políticas de RLS e funções consultem a permissão
+-- do usuário logado (admin tem sempre acesso total).
+create or replace function public.has_permission(p_perm text)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    left join public.user_roles r on r.id = p.role_id
+    where p.id = auth.uid()
+      and (p.role = 'admin' or (r.active and r.permissions ? p_perm))
+  );
+$$;
+
+-- Importação de dados: liberada para quem tem a permissão "import".
+drop policy if exists "imports_select" on public.imports;
+create policy "imports_select" on public.imports for select
+  using (public.current_user_role() in ('admin','manager') or public.has_permission('import'));
+
+drop policy if exists "imports_write" on public.imports;
+create policy "imports_write" on public.imports for all
+  using (public.current_user_role() = 'admin' or public.has_permission('import'))
+  with check (public.current_user_role() = 'admin' or public.has_permission('import'));
+
+-- Estorno feito pelo painel fica vinculado à UC (tarefa 1020) do mesmo palete.
+alter table public.warehouse_tasks
+  add column if not exists reversal_reason text,
+  add column if not exists reversed_at timestamptz;
+
+-- Estorno/reativação de recebimento: liberado para quem tem "orders:reversal" e
+-- registra a auditoria, recalcula as métricas e marca a UC correspondente.
+create or replace function public.set_receipt_valid(
+  p_receipt_id bigint,
+  p_valid boolean,
+  p_motivo text default null
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_cur boolean;
+  v_ord text;
+  v_doc text;
+  v_mat text;
+  v_lot text;
+  v_qty numeric;
+begin
+  if public.current_user_role() <> 'admin' and not public.has_permission('orders:reversal') then
+    return 'Seu perfil não tem permissão para estornar recebimentos.';
+  end if;
+  select is_valid, production_order, document_number, material_code, lot, quantity
+    into v_cur, v_ord, v_doc, v_mat, v_lot, v_qty
+  from public.production_receipts where id = p_receipt_id;
+  if v_cur is null then
+    return 'Recebimento não encontrado.';
+  end if;
+  update public.production_receipts
+  set is_valid = p_valid,
+      reversal_reason = case when p_valid then null else coalesce(nullif(trim(coalesce(p_motivo,'')),''), 'Estorno manual') end,
+      reversed_at = case when p_valid then null else now() end,
+      updated_at = now()
+  where id = p_receipt_id;
+  -- Vincula o estorno à UC (tarefa 1020) do mesmo palete da ordem.
+  update public.warehouse_tasks
+  set reversal_reason = case when p_valid then null else coalesce(nullif(trim(coalesce(p_motivo,'')),''), 'Estorno manual') end,
+      reversed_at = case when p_valid then null else now() end,
+      updated_at = now()
+  where process_type = '1020'
+    and task_status is distinct from 'A'
+    and production_order = v_ord
+    and material_code is not distinct from v_mat
+    and lot is not distinct from v_lot
+    and quantity = v_qty;
+  insert into public.audit_logs (user_id, action, entity, entity_id, old_value, new_value)
+  values (auth.uid(),
+          case when p_valid then 'reativar_recebimento' else 'estornar_recebimento' end,
+          'production_receipts', p_receipt_id::text,
+          jsonb_build_object('is_valid', v_cur, 'document_number', v_doc, 'production_order', v_ord),
+          jsonb_build_object('is_valid', p_valid, 'reversal_reason', p_motivo));
+  perform public.refresh_order_metrics();
+  return 'ok';
+end;
+$$;
+
+-- Normalização de saldo: liberada para quem tem "orders:normalize". A função
+-- altera somente as colunas de normalização (sem abrir escrita geral na tabela).
+create or replace function public.normalize_order_saldo(
+  p_order_number text,
+  p_reason text default null
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_cur boolean;
+begin
+  if public.current_user_role() <> 'admin' and not public.has_permission('orders:normalize') then
+    return 'Seu perfil não tem permissão para normalizar saldo.';
+  end if;
+  select normalized_saldo into v_cur
+  from public.production_orders where order_number = p_order_number;
+  if v_cur is null then
+    return 'Ordem não encontrada.';
+  end if;
+  update public.production_orders
+  set normalized_saldo = not v_cur,
+      normalized_reason = case when v_cur then null else coalesce(nullif(trim(coalesce(p_reason,'')),''), 'Divergência analisada e aceita') end,
+      normalized_at = case when v_cur then null else now() end,
+      updated_at = now()
+  where order_number = p_order_number;
+  insert into public.audit_logs (user_id, action, entity, entity_id, old_value, new_value)
+  values (auth.uid(),
+          case when v_cur then 'remover_normalizacao' else 'normalizar_saldo' end,
+          'production_orders', p_order_number,
+          jsonb_build_object('normalized_saldo', v_cur),
+          jsonb_build_object('normalized_saldo', not v_cur, 'reason', p_reason));
+  perform public.refresh_order_metrics();
+  return 'ok';
+end;
+$$;

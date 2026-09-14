@@ -319,11 +319,25 @@ Deno.serve(async (req) => {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, role_id, user_roles(permissions)")
       .eq("id", user.id)
       .maybeSingle();
-    if (profile?.role !== "admin") {
-      return json(corsHeaders, { ok: false, error: "Apenas administradores podem importar" }, 403);
+    const profileRow = profile as
+      | {
+          role: string;
+          role_id: number | null;
+          user_roles?: { permissions?: unknown } | null;
+        }
+      | null;
+    const perms = Array.isArray(profileRow?.user_roles?.permissions)
+      ? (profileRow.user_roles.permissions as unknown[]).filter(
+          (p): p is string => typeof p === "string",
+        )
+      : [];
+    // Libera a importação para quem tem a permissão "import" no painel
+    // (Perfis e Permissões), não apenas para administradores.
+    if (profileRow?.role !== "admin" && !perms.includes("import")) {
+      return json(corsHeaders, { ok: false, error: "Seu perfil não tem permissão para importar dados." }, 403);
     }
 
     const body = await req.json().catch(() => null);
