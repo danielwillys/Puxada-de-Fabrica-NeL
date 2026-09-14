@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, FileText, Search, Sheet as SheetIcon } from "lucide-react";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { FilterBar } from "@/components/filter-bar";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -15,10 +18,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { exportCsv, exportExcel } from "@/lib/excel";
+import { exportCsv, exportExcel, exportExcelSheets } from "@/lib/excel";
 import { fmtDate, fmtDateTime, fmtPercent, fmtQty } from "@/lib/format";
 import { useFilters } from "@/context/filters-context";
 import { useOrdersExport, useOrdersPage } from "@/lib/queries";
+import { TASK_STATUS_META, type ProductionReceipt, type WarehouseTask } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const COLUMNS: {
@@ -115,6 +119,8 @@ export function OrdersPage() {
   const [pageSize] = useState(20);
   const [sortField, setSortField] = useState("order_number");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  /** Inclui Pallets/UC e Entradas físicas (Recebimento) no relatório exportado. */
+  const [expand, setExpand] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -146,9 +152,9 @@ export function OrdersPage() {
     setPage(1);
   };
 
-  const handleExport = (format: "excel" | "csv") => {
+  const handleExport = async (format: "excel" | "csv") => {
     const rows = exportQuery.data ?? [];
-    const out = rows.map((r) => {
+    const ordersSheet = rows.map((r) => {
       const o: Record<string, string> = {};
       for (const key of Object.keys(EXPORT_LABELS)) {
         const value = (r as unknown as Record<string, unknown>)[key];
@@ -160,8 +166,91 @@ export function OrdersPage() {
       return o;
     });
     const base = `ordens_${debounced.period}_${new Date().toISOString().slice(0, 10)}`;
-    if (format === "excel") exportExcel(`${base}.xlsx`, out);
-    else exportCsv(`${base}.csv`, out);
+
+    if (!expand) {
+      if (format === "excel") exportExcel(`${base}.xlsx`, ordersSheet);
+      else exportCsv(`${base}.csv`, ordersSheet);
+      return;
+    }
+
+    // Relatório expandido: traz junto os Pallets/UC e as Entradas físicas das
+    // ordens filtradas, sem exportar outro arquivo separadamente.
+    try {
+      const nums = rows.map((r) => r.order_number);
+      const tasks: WarehouseTask[] = [];
+      const receipts: ProductionReceipt[] = [];
+      for (let i = 0; i < nums.length; i += 100) {
+        const chunk = nums.slice(i, i + 100);
+        const [tRes, rRes] = await Promise.all([
+          supabase.from("warehouse_tasks").select("*").in("production_order", chunk),
+          supabase.from("production_receipts").select("*").in("production_order", chunk),
+        ]);
+        if (tRes.error) throw tRes.error;
+        if (rRes.error) throw rRes.error;
+        tasks.push(...((tRes.data ?? []) as WarehouseTask[]));
+        receipts.push(...((rRes.data ?? []) as ProductionReceipt[]));
+      }
+
+      const ucRows = tasks
+        .filter((t) => t.process_type === "1020")
+        .map((t) => ({
+          Ordem: t.production_order ?? "",
+          UC: t.source_uc ?? "",
+          Documento: t.document ?? "",
+          Material: t.material_code ?? "",
+          Descrição: t.material_description ?? "",
+          Lote: t.lot ?? "",
+          Quantidade: t.quantity,
+          UM: t.unit ?? "",
+          Status: t.reversed_at
+            ? `Estornado${t.reversal_reason ? ` (${t.reversal_reason})` : ""}`
+            : (TASK_STATUS_META[t.task_status ?? ""]?.label ?? t.task_status ?? ""),
+          "Puxada por": t.author ?? "",
+          "Puxada em": t.creation_date
+            ? `${t.creation_date}${t.creation_time ? " " + t.creation_time : ""}`
+            : "",
+          "Armazenado por": t.confirmed_by ?? "",
+          "Armazenagem em": t.confirmation_date
+            ? `${t.confirmation_date}${t.confirmation_time ? " " + t.confirmation_time : ""}`
+            : "",
+        }));
+
+      const rcRows = receipts.map((r) => ({
+        Ordem: r.production_order,
+        Documento: r.document_number,
+        Produto: r.material_code,
+        Descrição: r.material_description ?? "",
+        Lote: r.lot ?? "",
+        Quantidade: r.quantity,
+        UM: r.unit ?? "",
+        "EM (data)": fmtDate(r.goods_receipt_date),
+        "EM (hora)": r.goods_receipt_time ?? "",
+        "Depósito (data)": fmtDate(r.storage_date),
+        "Depósito (hora)": r.storage_time ?? "",
+        Válido: r.is_valid ? "Sim" : "Não (estornado)",
+        "Motivo do estorno": r.reversal_reason ?? "",
+        "Data do estorno": fmtDateTime(r.reversed_at),
+      }));
+
+      if (format === "excel") {
+        exportExcelSheets(`${base}_expandido.xlsx`, [
+          { name: "Ordens", rows: ordersSheet },
+          { name: "Pallets / UC", rows: ucRows },
+          { name: "Entradas físicas", rows: rcRows },
+        ]);
+      } else {
+        const flat = [
+          ...ordersSheet.map((o) => ({ Tipo: "Ordem", ...o })),
+          ...ucRows.map((u) => ({ Tipo: "UC", ...u })),
+          ...rcRows.map((r) => ({ Tipo: "Recebimento", ...r })),
+        ];
+        exportCsv(`${base}_expandido.csv`, flat);
+      }
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Não foi possível gerar o relatório expandido.",
+      );
+    }
   };
 
   return (
@@ -185,7 +274,11 @@ export function OrdersPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <div className="ml-auto flex gap-2">
+        <label className="ml-auto flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs text-muted-foreground">
+          <Switch checked={expand} onCheckedChange={setExpand} />
+          Expandir dados (incluir Pallets/UC e Entradas físicas)
+        </label>
+        <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => handleExport("excel")}>
             <SheetIcon className="h-4 w-4" />
             Excel

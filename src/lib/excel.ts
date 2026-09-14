@@ -47,3 +47,16 @@ export function exportCsv(
   a.click();
   URL.revokeObjectURL(url);
 }
+
+/** Exporta um arquivo Excel com várias abas (ex.: Ordens + Pallets/UC + Entradas físicas). */
+export function exportExcelSheets(
+  filename: string,
+  sheets: { name: string; rows: Record<string, unknown>[] }[],
+): void {
+  const wb = XLSX.utils.book_new();
+  for (const s of sheets) {
+    const ws = XLSX.utils.json_to_sheet(s.rows);
+    XLSX.utils.book_append_sheet(wb, ws, s.name.slice(0, 31));
+  }
+  XLSX.writeFile(wb, filename);
+}

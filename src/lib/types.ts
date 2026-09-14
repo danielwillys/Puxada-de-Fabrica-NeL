@@ -128,6 +128,9 @@ export interface WarehouseTask {
   storage_shift_id: number | null;
   operational_pull_day: string | null;
   operational_storage_day: string | null;
+  /** Estorno feito pelo painel (Estornar recebimento) vinculado à UC. */
+  reversal_reason: string | null;
+  reversed_at: string | null;
 }
 
 export interface SapReconciliation {

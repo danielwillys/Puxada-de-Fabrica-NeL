@@ -58,7 +58,8 @@ function detectType(headers: string[]): ImportType | null {
 }
 
 export function ImportPage() {
-  const { profile } = useAuth();
+  const { profile, permissions } = useAuth();
+  const canImport = profile?.role === "admin" || permissions.includes("import");
   const imports = useImports();
   const [file, setFile] = useState<File | null>(null);
   const [type, setType] = useState<ImportType | null>(null);
@@ -80,10 +81,12 @@ export function ImportPage() {
     [type],
   );
 
-  if (profile?.role !== "admin") {
+  if (!canImport) {
     return (
       <Card className="p-8 text-center text-muted-foreground">
-        Acesso restrito a administradores. Importe apenas com perfil Administrador.
+        Seu perfil não inclui a permissão de importação de dados. Solicite ao
+        administrador que libere a função <strong>Importação de Dados</strong> no
+        painel de Perfis e Permissões.
       </Card>
     );
   }

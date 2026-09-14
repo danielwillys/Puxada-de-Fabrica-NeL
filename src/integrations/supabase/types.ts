@@ -3823,6 +3823,8 @@ export type Database = {
           pull_operator_id: number | null
           pull_shift_id: number | null
           quantity: number
+          reversal_reason: string | null
+          reversed_at: string | null
           source_uc: string | null
           storage_operator_id: number | null
           storage_shift_id: number | null
@@ -3853,6 +3855,8 @@ export type Database = {
           pull_operator_id?: number | null
           pull_shift_id?: number | null
           quantity?: number
+          reversal_reason?: string | null
+          reversed_at?: string | null
           source_uc?: string | null
           storage_operator_id?: number | null
           storage_shift_id?: number | null
@@ -3883,6 +3887,8 @@ export type Database = {
           pull_operator_id?: number | null
           pull_shift_id?: number | null
           quantity?: number
+          reversal_reason?: string | null
+          reversed_at?: string | null
           source_uc?: string | null
           storage_operator_id?: number | null
           storage_shift_id?: number | null
@@ -4051,9 +4057,17 @@ export type Database = {
           shift_id: number
         }[]
       }
+      has_permission: {
+        Args: { p_perm: string }
+        Returns: boolean
+      }
       link_tasks_to_orders: {
         Args: Record<PropertyKey, never>
         Returns: undefined
+      }
+      normalize_order_saldo: {
+        Args: { p_order_number: string; p_reason?: string }
+        Returns: string
       }
       refresh_order_metrics: {
         Args: Record<PropertyKey, never>

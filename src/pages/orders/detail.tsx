@@ -8,12 +8,14 @@ import {
   CheckCircle2,
   Clock,
   Factory,
+  FileText,
   Flag,
   Hourglass,
   Loader2,
   Package,
   RotateCcw,
   Scale,
+  Sheet as SheetIcon,
   User,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -56,8 +58,11 @@ import {
   minutesBetween,
   parseLocalDateTime,
 } from "@/lib/format";
+import { exportCsv, exportExcel } from "@/lib/excel";
+import { buildUcView } from "@/lib/uc-view";
 import { useOrderMetrics, useOrderReceipts, useOrderTasks } from "@/lib/queries";
-import type { ProductionReceipt, WarehouseTask } from "@/lib/types";
+import type { ProductionReceipt } from "@/lib/types";
+import { TASK_STATUS_META } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function SummaryItem({ label, value }: { label: string; value: string }) {
@@ -70,7 +75,6 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-
 function TimelineStep({
   label,
   value,
@@ -112,13 +116,6 @@ function TimelineStep({
   );
 }
 
-function taskPullAt(t: WarehouseTask): Date | null {
-  return parseLocalDateTime(t.creation_date, t.creation_time);
-}
-function taskStorageAt(t: WarehouseTask): Date | null {
-  return parseLocalDateTime(t.confirmation_date, t.confirmation_time);
-}
-
 export function OrderDetail() {
   const { orderNumber = "" } = useParams();
   const { profile } = useAuth();
@@ -143,15 +140,12 @@ export function OrderDetail() {
   const toggleNormalize = useMutation({
     mutationFn: async () => {
       if (!row) return;
-      const { error } = await supabase
-        .from("production_orders")
-        .update({
-          normalized_saldo: !row.normalized_saldo,
-          normalized_reason: row.normalized_saldo ? null : normalizeReason,
-          normalized_at: row.normalized_saldo ? null : new Date().toISOString(),
-        })
-        .eq("order_number", orderNumber);
+      const { data, error } = await supabase.rpc("normalize_order_saldo", {
+        p_order_number: orderNumber,
+        p_reason: normalizeReason,
+      });
       if (error) throw error;
+      if (data && data !== "ok") throw new Error(String(data));
     },
     onSuccess: () => {
       toast.success(row?.normalized_saldo ? "Normalização removida." : "Saldo normalizado (divergência aceita).");
@@ -190,13 +184,9 @@ export function OrderDetail() {
 
   const row = metrics.data;
   const receiptList = useMemo(() => receipts.data ?? [], [receipts.data]);
-  // A tabela "Pallets / UC da ordem" mostra somente as tarefas de puxada (1020).
-  // As armazenagens (1012) são contabilizadas no 1020 e só interessam na
-  // performance dos operadores.
-  const taskList = useMemo(
-    () => (tasks.data ?? []).filter((t) => t.process_type === "1020"),
-    [tasks.data],
-  );
+  // "Pallets / UC da ordem": somente UCs confirmadas à armazenagem (ou estornadas
+  // pelo painel). Tarefas estornadas no relatório (task_status='A') são ocultadas.
+  const ucRows = useMemo(() => buildUcView(tasks.data ?? []), [tasks.data]);
 
   const lastStorageAt = useMemo(() => {
     let max: Date | null = null;
@@ -206,6 +196,50 @@ export function OrderDetail() {
     }
     return max;
   }, [receiptList]);
+
+  const exportUcs = (format: "excel" | "csv") => {
+    const out = ucRows.map((r) => ({
+      UC: r.uc ?? "",
+      Documento: r.document ?? "",
+      Material: r.material ?? "",
+      Descrição: r.description ?? "",
+      Lote: r.lot ?? "",
+      Quantidade: r.quantity,
+      UM: r.unit ?? "",
+      Status: r.panelReversed
+        ? `Estornado${r.reversalReason ? ` (${r.reversalReason})` : ""}`
+        : (TASK_STATUS_META[r.status ?? ""]?.label ?? r.status ?? ""),
+      "Puxada por": r.pullAuthor ?? "",
+      "Puxada em": r.pullAt ? fmtDateTime(r.pullAt) : "",
+      "Armazenado por": r.storageBy ?? "",
+      "Armazenagem em": r.storageAt ? fmtDateTime(r.storageAt) : "",
+      "Espera (min)": r.waitMinutes !== null ? Math.round(r.waitMinutes) : "",
+    }));
+    const base = `ordem_${orderNumber}_ucs_${new Date().toISOString().slice(0, 10)}`;
+    if (format === "excel") exportExcel(`${base}.xlsx`, out);
+    else exportCsv(`${base}.csv`, out);
+  };
+
+  const exportReceipts = (format: "excel" | "csv") => {
+    const out = receiptList.map((r) => ({
+      Documento: r.document_number,
+      Produto: r.material_code,
+      Descrição: r.material_description ?? "",
+      Lote: r.lot ?? "",
+      Quantidade: r.quantity,
+      UM: r.unit ?? "",
+      "EM (data)": fmtDate(r.goods_receipt_date),
+      "EM (hora)": r.goods_receipt_time ?? "",
+      "Depósito (data)": fmtDate(r.storage_date),
+      "Depósito (hora)": r.storage_time ?? "",
+      Válido: r.is_valid ? "Sim" : "Não (estornado)",
+      "Motivo do estorno": r.reversal_reason ?? "",
+      "Data do estorno": fmtDateTime(r.reversed_at),
+    }));
+    const base = `ordem_${orderNumber}_recebimentos_${new Date().toISOString().slice(0, 10)}`;
+    if (format === "excel") exportExcel(`${base}.xlsx`, out);
+    else exportCsv(`${base}.csv`, out);
+  };
 
   if (metrics.isLoading) {
     return (
@@ -368,10 +402,22 @@ export function OrderDetail() {
         </Card>
 
         <Card className="p-4">
-          <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <Boxes className="h-4 w-4 text-primary" /> Pallets / UC da ordem
-            <Badge variant="secondary">{taskList.length}</Badge>
-          </p>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              <Boxes className="h-4 w-4 text-primary" /> Pallets / UC da ordem
+              <Badge variant="secondary">{ucRows.length}</Badge>
+            </p>
+            {ucRows.length > 0 ? (
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => exportUcs("excel")}>
+                  <SheetIcon className="h-4 w-4" /> Excel
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => exportUcs("csv")}>
+                  <FileText className="h-4 w-4" /> CSV
+                </Button>
+              </div>
+            ) : null}
+          </div>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -388,48 +434,49 @@ export function OrderDetail() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {taskList.map((t) => {
-                  const pullAt = taskPullAt(t);
-                  const storageAt = taskStorageAt(t);
-                  const wait = minutesBetween(pullAt, storageAt);
-                  return (
-                    <TableRow key={t.id}>
-                      <TableCell className="font-medium">{t.source_uc ?? "—"}</TableCell>
-                      <TableCell>{t.document ?? "—"}</TableCell>
-                      <TableCell>{t.material_code ?? "—"}</TableCell>
-                      <TableCell>{t.lot ?? "—"}</TableCell>
-                      <TableCell className="text-right tabular-nums">{fmtQty(t.quantity)}</TableCell>
-                      <TableCell>
-                        <TaskStatusBadge status={t.task_status} />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          <User className="h-3 w-3" />
-                          {t.author ?? "—"}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {fmtDateTime(pullAt?.toISOString())}
-                        </span>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          <User className="h-3 w-3" />
-                          {t.confirmed_by ?? "—"}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {fmtDateTime(storageAt?.toISOString())}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {wait !== null && wait >= 0 ? fmtDurationMinutes(wait) : "—"}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-                {taskList.length === 0 ? (
+                {ucRows.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="font-medium">{r.uc ?? "—"}</TableCell>
+                    <TableCell>{r.document ?? "—"}</TableCell>
+                    <TableCell>{r.material ?? "—"}</TableCell>
+                    <TableCell>{r.lot ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{fmtQty(r.quantity)}</TableCell>
+                    <TableCell>
+                      {r.panelReversed ? (
+                        <Badge variant="danger" title={r.reversalReason ?? undefined}>
+                          Estornado
+                        </Badge>
+                      ) : (
+                        <TaskStatusBadge status={r.status} />
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <span className="flex items-center gap-1 text-muted-foreground">
+                        <User className="h-3 w-3" />
+                        {r.pullAuthor ?? "—"}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {fmtDateTime(r.pullAt)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <span className="flex items-center gap-1 text-muted-foreground">
+                        <User className="h-3 w-3" />
+                        {r.storageBy ?? "—"}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {fmtDateTime(r.storageAt)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.waitMinutes !== null ? fmtDurationMinutes(r.waitMinutes) : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {ucRows.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
-                      Nenhuma tarefa de puxada (1020) vinculada a esta ordem.
+                      Nenhuma UC confirmada à armazenagem para esta ordem.
                     </TableCell>
                   </TableRow>
                 ) : null}
@@ -440,10 +487,22 @@ export function OrderDetail() {
       </div>
 
       <Card className="p-4">
-        <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
-          <Package className="h-4 w-4 text-primary" /> Entradas físicas (Recebimento)
-          <Badge variant="secondary">{receiptList.length}</Badge>
-        </p>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            <Package className="h-4 w-4 text-primary" /> Entradas físicas (Recebimento)
+            <Badge variant="secondary">{receiptList.length}</Badge>
+          </p>
+          {receiptList.length > 0 ? (
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => exportReceipts("excel")}>
+                <SheetIcon className="h-4 w-4" /> Excel
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => exportReceipts("csv")}>
+                <FileText className="h-4 w-4" /> CSV
+              </Button>
+            </div>
+          ) : null}
+        </div>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
