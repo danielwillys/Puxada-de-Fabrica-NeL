@@ -18,6 +18,8 @@ export interface Profile {
   role: Role;
   role_id: number | null;
   active: boolean;
+  /** Usuário precisa trocar a senha no próximo login (definido pela administração). */
+  must_change_password: boolean;
 }
 
 export interface UserRole {

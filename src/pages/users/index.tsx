@@ -15,6 +15,7 @@ import { useAuth } from "@/context/auth-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -51,9 +52,16 @@ interface UserForm {
   name: string;
   password: string;
   role_id: string;
+  must_change_password: boolean;
 }
 
-const EMPTY_FORM: UserForm = { email: "", name: "", password: "", role_id: "" };
+const EMPTY_FORM: UserForm = {
+  email: "",
+  name: "",
+  password: "",
+  role_id: "",
+  must_change_password: false,
+};
 
 function invoke(action: string, payload: Record<string, unknown>) {
   return supabase.functions.invoke("manage-users", { body: { action, ...payload } });
@@ -75,6 +83,7 @@ export function UsersPage() {
   const [editing, setEditing] = useState<UserAdminRow | null>(null);
   const [resetTarget, setResetTarget] = useState<UserAdminRow | null>(null);
   const [resetPassword, setResetPassword] = useState("");
+  const [resetMustChange, setResetMustChange] = useState(true);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["admin-users"] });
@@ -88,6 +97,7 @@ export function UsersPage() {
         password: f.password,
         name: f.name,
         role_id: Number(f.role_id),
+        must_change_password: f.must_change_password,
       });
       if (res.error) throw new Error(await getError(res));
     },
@@ -105,6 +115,7 @@ export function UsersPage() {
         user_id: f.id,
         name: f.name,
         role_id: Number(f.role_id),
+        must_change_password: f.must_change_password,
       });
       if (res.error) throw new Error(await getError(res));
     },
@@ -134,6 +145,7 @@ export function UsersPage() {
       const res = await invoke("reset_password", {
         user_id: resetTarget.id,
         password: resetPassword,
+        must_change_password: resetMustChange,
       });
       if (res.error) throw new Error(await getError(res));
     },
@@ -141,6 +153,7 @@ export function UsersPage() {
       toast.success("Senha redefinida.");
       setResetTarget(null);
       setResetPassword("");
+      setResetMustChange(true);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Não foi possível redefinir."),
   });
@@ -165,6 +178,7 @@ export function UsersPage() {
       name: u.name,
       password: "",
       role_id: u.role_id ? String(u.role_id) : "",
+      must_change_password: u.must_change_password,
     });
     setOpen(true);
   };
@@ -209,6 +223,7 @@ export function UsersPage() {
                   <TableHead>Perfil</TableHead>
                   <TableHead>Papel</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Senha</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
@@ -226,6 +241,13 @@ export function UsersPage() {
                         <Badge variant="success">Ativo</Badge>
                       ) : (
                         <Badge variant="danger">Inativo</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {u.must_change_password ? (
+                        <Badge variant="warning">Troca pendente</Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
@@ -268,7 +290,7 @@ export function UsersPage() {
                 ))}
                 {rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                       Nenhum usuário encontrado.
                     </TableCell>
                   </TableRow>
@@ -337,6 +359,18 @@ export function UsersPage() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="col-span-2 flex items-center gap-2.5 rounded-md border px-3 py-2.5">
+              <Checkbox
+                id="must-change-password"
+                checked={form.must_change_password}
+                onCheckedChange={(v) =>
+                  setForm({ ...form, must_change_password: v === true })
+                }
+              />
+              <Label htmlFor="must-change-password" className="cursor-pointer text-sm">
+                Exigir troca de senha no próximo login
+              </Label>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
@@ -380,6 +414,16 @@ export function UsersPage() {
               minLength={6}
               onChange={(e) => setResetPassword(e.target.value)}
             />
+          </div>
+          <div className="flex items-center gap-2.5 rounded-md border px-3 py-2.5">
+            <Checkbox
+              id="reset-must-change"
+              checked={resetMustChange}
+              onCheckedChange={(v) => setResetMustChange(v === true)}
+            />
+            <Label htmlFor="reset-must-change" className="cursor-pointer text-sm">
+              Exigir troca de senha no próximo login
+            </Label>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setResetTarget(null)}>

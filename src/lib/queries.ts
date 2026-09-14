@@ -601,6 +601,8 @@ export interface UserAdminRow {
   role_id: number | null;
   active: boolean;
   role_name: string | null;
+  /** Usuário ainda precisa trocar a senha no próximo login. */
+  must_change_password: boolean;
 }
 
 export function useAdminUsers() {
@@ -609,7 +611,7 @@ export function useAdminUsers() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id,email,name,role,role_id,active,user_roles(id,name)")
+        .select("id,email,name,role,role_id,active,must_change_password,user_roles(id,name)")
         .order("name", { ascending: true })
         .limit(1000);
       if (error) throw error;
@@ -621,6 +623,7 @@ export function useAdminUsers() {
           role: string;
           role_id: number | null;
           active: boolean;
+          must_change_password: boolean;
           user_roles: { id: number; name: string } | null;
         };
         return {
@@ -631,6 +634,7 @@ export function useAdminUsers() {
           role_id: row.role_id,
           active: row.active,
           role_name: row.user_roles?.name ?? null,
+          must_change_password: row.must_change_password ?? false,
         } as UserAdminRow;
       });
     },

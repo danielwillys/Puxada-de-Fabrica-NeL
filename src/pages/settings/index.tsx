@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Palette, Plus, RotateCcw, Save, Settings2, Trash2 } from "lucide-react";
+import { Loader2, Palette, Plus, RotateCcw, Save, Settings2, Trash2, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/context/auth-context";
@@ -63,6 +63,13 @@ export function SettingsPage() {
   const [slaInput, setSlaInput] = useState("30");
   const [backlogRanges, setBacklogRanges] = useState<BacklogRange[]>(DEFAULT_BACKLOG);
   const [savingOperational, setSavingOperational] = useState(false);
+  const [goalInput, setGoalInput] = useState("");
+  const [savingGoal, setSavingGoal] = useState(false);
+
+  useEffect(() => {
+    const goal = (settings.data ?? []).find((s) => s.key === "pull_daily_goal");
+    if (goal && typeof goal.value === "number") setGoalInput(String(goal.value));
+  }, [settings.data]);
 
   useEffect(() => {
     const sla = (settings.data ?? []).find((s) => s.key === "storage_sla_minutes");
@@ -108,6 +115,32 @@ export function SettingsPage() {
       toast.error(e instanceof Error ? e.message : "Não foi possível salvar.");
     } finally {
       setSavingOperational(false);
+    }
+  };
+
+  const saveGoal = async (clear = false) => {
+    const value = Number(goalInput);
+    if (!clear && (!Number.isFinite(value) || value <= 0)) {
+      toast.error("Informe uma meta diária válida (quantidade por dia).");
+      return;
+    }
+    setSavingGoal(true);
+    try {
+      if (clear) {
+        await supabase.from("system_settings").delete().eq("key", "pull_daily_goal");
+        setGoalInput("");
+      } else {
+        await supabase.from("system_settings").upsert(
+          { key: "pull_daily_goal", value },
+          { onConflict: "key" },
+        );
+      }
+      settings.refetch();
+      toast.success(clear ? "Meta diária removida." : "Meta diária atualizada.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Não foi possível salvar.");
+    } finally {
+      setSavingGoal(false);
     }
   };
 
@@ -345,6 +378,42 @@ export function SettingsPage() {
               )}
               Salvar parâmetros
             </Button>
+          </Card>
+
+          <Card className="max-w-2xl p-4">
+            <p className="mb-1 flex items-center gap-2 text-sm font-semibold">
+              <TrendingUp className="h-4 w-4 text-primary" /> Meta diária de puxada
+            </p>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Define a linha de meta do gráfico{" "}
+              <strong>"Puxado físico por dia"</strong> do Dashboard Gerencial
+              (caixas recebidas por dia). Sem valor, o gráfico não mostra linha de meta.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                type="number"
+                min={1}
+                value={goalInput}
+                onChange={(e) => setGoalInput(e.target.value)}
+                placeholder="Ex.: 500"
+                className="h-9 w-36 text-right tabular-nums"
+              />
+              <Button onClick={() => saveGoal()} disabled={savingGoal}>
+                {savingGoal ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                Salvar meta
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => saveGoal(true)}
+                disabled={savingGoal}
+              >
+                <RotateCcw className="h-4 w-4" /> Remover meta
+              </Button>
+            </div>
           </Card>
 
           <Card className="max-w-2xl p-4">

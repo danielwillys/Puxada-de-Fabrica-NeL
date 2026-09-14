@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useState,
@@ -18,6 +19,8 @@ interface AuthContextValue {
   permissions: string[];
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  /** Recarrega o perfil do usuário logado (ex.: após trocar a senha). */
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -29,49 +32,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [initialized, setInitialized] = useState(false);
 
-  useEffect(() => {
-    const loadProfile = (userId: string) => {
-      // Defer the client call out of the onAuthStateChange callback.
-      setTimeout(() => {
-        supabase
-          .from("profiles")
-          .select("id,email,name,role,role_id,active,user_roles(permissions)")
-          .eq("id", userId)
-          .maybeSingle()
-          .then(({ data }) => {
-            const row = data as
-              | (Partial<Profile> & {
-                  user_roles?: { permissions?: unknown } | null;
-                })
-              | null;
-            setProfile(
-              row
-                ? {
-                    id: row.id ?? userId,
-                    email: row.email ?? "",
-                    name: row.name ?? "",
-                    role: row.role ?? "operator",
-                    role_id: row.role_id ?? null,
-                    active: row.active ?? true,
-                  }
-                : null,
-            );
-            const perms = Array.isArray(row?.user_roles?.permissions)
-              ? (row.user_roles!.permissions as unknown[])
-                  .filter((p): p is string => typeof p === "string")
-              : [];
-            // Admin keeps full access regardless of stored permissions.
-            setPermissions(
-              row?.role === "admin"
-                ? ["*"]
-                : perms.length > 0
-                  ? perms
-                  : [],
-            );
-          });
-      }, 0);
-    };
+  const loadProfile = useCallback((userId: string) => {
+    // Defer the client call out of the onAuthStateChange callback.
+    setTimeout(() => {
+      supabase
+        .from("profiles")
+        .select("id,email,name,role,role_id,active,must_change_password,user_roles(permissions)")
+        .eq("id", userId)
+        .maybeSingle()
+        .then(({ data }) => {
+          const row = data as
+            | (Partial<Profile> & {
+                user_roles?: { permissions?: unknown } | null;
+              })
+            | null;
+          setProfile(
+            row
+              ? {
+                  id: row.id ?? userId,
+                  email: row.email ?? "",
+                  name: row.name ?? "",
+                  role: row.role ?? "operator",
+                  role_id: row.role_id ?? null,
+                  active: row.active ?? true,
+                  must_change_password: row.must_change_password ?? false,
+                }
+              : null,
+          );
+          const perms = Array.isArray(row?.user_roles?.permissions)
+            ? (row.user_roles!.permissions as unknown[])
+                .filter((p): p is string => typeof p === "string")
+            : [];
+          // Admin keeps full access regardless of stored permissions.
+          setPermissions(
+            row?.role === "admin"
+              ? ["*"]
+              : perms.length > 0
+                ? perms
+                : [],
+          );
+        });
+    }, 0);
+  }, []);
 
+  useEffect(() => {
     const { data: subscription } = supabase.auth.onAuthStateChange(
       (_event, s) => {
         setSession(s);
@@ -93,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => subscription.subscription.unsubscribe();
-  }, []);
+  }, [loadProfile]);
 
   const value: AuthContextValue = {
     user,
@@ -110,6 +114,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     signOut: async () => {
       await supabase.auth.signOut();
+    },
+    refreshProfile: async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user?.id ?? user?.id;
+      if (userId) loadProfile(userId);
     },
   };
 
