@@ -15,12 +15,15 @@ interface CreateUserInput {
   password: string;
   name: string;
   role_id: number;
+  /** Exigir troca de senha no próximo login. */
+  must_change_password?: boolean;
 }
 
 interface UpdateUserInput {
   user_id: string;
   name?: string;
   role_id?: number;
+  must_change_password?: boolean;
 }
 
 interface SetActiveInput {
@@ -31,6 +34,8 @@ interface SetActiveInput {
 interface ResetPasswordInput {
   user_id: string;
   password: string;
+  /** Exigir troca de senha no próximo login (padrão: true). */
+  must_change_password?: boolean;
 }
 
 Deno.serve(async (req) => {
@@ -109,6 +114,7 @@ Deno.serve(async (req) => {
               role: roleRow.role,
               role_id: roleRow.id,
               active: true,
+              must_change_password: i.must_change_password ?? false,
             },
             { onConflict: "id" },
           );
@@ -132,6 +138,7 @@ Deno.serve(async (req) => {
         if (!i.user_id) return json(corsHeaders, { ok: false, error: "Usuário não informado." }, 400);
         const patch: Record<string, unknown> = {};
         if (i.name !== undefined) patch.name = i.name.trim();
+        if (i.must_change_password !== undefined) patch.must_change_password = i.must_change_password;
         if (i.role_id !== undefined) {
           const { data: roleRow } = await supabase
             .from("user_roles")
@@ -200,12 +207,18 @@ Deno.serve(async (req) => {
           password: i.password,
         });
         if (pwdErr) return json(corsHeaders, { ok: false, error: pwdErr.message }, 500);
+        // Ao redefinir, o usuário troca a senha no próximo login (padrão seguro).
+        const { error: flagErr } = await supabase
+          .from("profiles")
+          .update({ must_change_password: i.must_change_password ?? true })
+          .eq("id", i.user_id);
+        if (flagErr) return json(corsHeaders, { ok: false, error: flagErr.message }, 500);
         await supabase.from("audit_logs").insert({
           user_id: actor.id,
           action: "reset_password",
           entity: "profiles",
           entity_id: i.user_id,
-          new_value: { reset: true },
+          new_value: { reset: true, must_change_password: i.must_change_password ?? true },
         });
         return json(corsHeaders, { ok: true });
       }
