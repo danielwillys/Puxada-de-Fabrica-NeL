@@ -56,7 +56,12 @@ export function exportExcelSheets(
   const wb = XLSX.utils.book_new();
   for (const s of sheets) {
     const ws = XLSX.utils.json_to_sheet(s.rows);
-    XLSX.utils.book_append_sheet(wb, ws, s.name.slice(0, 31));
+    // O Excel não aceita : \ / ? * [ ] no nome da aba.
+    const safeName = s.name
+      .replace(/[\\/?*[\]:]/g, "-")
+      .slice(0, 31)
+      .trim();
+    XLSX.utils.book_append_sheet(wb, ws, safeName || "Planilha");
   }
   XLSX.writeFile(wb, filename);
 }
