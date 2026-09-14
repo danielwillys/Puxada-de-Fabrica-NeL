@@ -14,10 +14,12 @@ import {
   UserRoundCog,
   Users,
   UsersRound,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { ROLE_LABEL } from "@/lib/types";
+import { ForcePasswordChange } from "@/components/force-password-change";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -34,10 +36,13 @@ interface NavItem {
   adminOnly?: boolean;
   /** Permissão necessária para exibir o item (quando não admin). */
   permission?: string;
+  /** Ativa apenas quando a URL é exatamente igual (sem prefixo). */
+  exact?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard" },
+  { to: "/dashboard", label: "Dashboard Gerencial", icon: LayoutDashboard, permission: "dashboard", exact: true },
+  { to: "/dashboard/operacional", label: "Dashboard Operacional", icon: Workflow, permission: "dashboard" },
   { to: "/ordens", label: "Ordens de Produção", icon: ClipboardList, permission: "orders" },
   { to: "/performance", label: "Performance", icon: Gauge, permission: "performance" },
   { to: "/importacao", label: "Importação de Dados", icon: FileUp, permission: "import" },
@@ -62,6 +67,7 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
         <NavLink
           key={item.to}
           to={item.to}
+          end={item.exact}
           onClick={onNavigate}
           className={({ isActive }) =>
             cn(
@@ -145,6 +151,11 @@ export function AppLayout() {
     const next = encodeURIComponent(location.pathname + location.search);
     window.location.href = `/login?next=${next}`;
     return null;
+  }
+
+  if (profile.must_change_password) {
+    // Troca de senha obrigatória: bloqueia o sistema até a senha ser trocada.
+    return <ForcePasswordChange />;
   }
 
   return (

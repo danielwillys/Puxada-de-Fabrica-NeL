@@ -1,7 +1,8 @@
 import { Navigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/app-layout";
 import { LoginPage } from "@/pages/auth/login";
-import { FactoryPullDashboard } from "@/pages/dashboard/factory-pull";
+import { ManagerialDashboard } from "@/pages/dashboard/gerencial";
+import { OperationalDashboard } from "@/pages/dashboard/operacional";
 import { OrdersPage } from "@/pages/orders";
 import { OrderDetail } from "@/pages/orders/detail";
 import { ImportPage } from "@/pages/import";
@@ -40,7 +41,12 @@ export const routers = [
       {
         path: "dashboard",
         name: "dashboard",
-        element: <FactoryPullDashboard />,
+        element: <ManagerialDashboard />,
+      },
+      {
+        path: "dashboard/operacional",
+        name: "dashboard-operacional",
+        element: <OperationalDashboard />,
       },
       {
         path: "ordens",
