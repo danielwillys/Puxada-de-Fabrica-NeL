@@ -1,22 +1,24 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
-  ArrowDownToLine,
-  ArrowUpFromLine,
   Boxes,
   CircleDashed,
+  Download,
   FileText,
-  Gauge,
+  Loader2,
   Package,
   RotateCcw,
+  Scale,
   Sheet as SheetIcon,
   Timer,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Bar,
   BarChart,
   CartesianGrid,
+  LabelList,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -40,16 +42,18 @@ import {
 import { exportCsv, exportExcel } from "@/lib/excel";
 import { fmtDateTime, fmtDurationMinutes, fmtInt, fmtPercent, fmtQty } from "@/lib/format";
 import {
+  useMetrics,
   usePerformanceTasks,
+  useReconciliation,
   useReversedReceipts,
   useSettings,
   useShifts,
 } from "@/lib/queries";
 import {
   buildShiftSummaries,
-  pairPullToStorage,
   type ShiftSummary,
 } from "@/lib/performance";
+import { downloadDashboardPng } from "@/lib/png-export";
 import { useFilters } from "@/context/filters-context";
 import { C, CHART_TOOLTIP, ChartCard, Kpi } from "./shared";
 
@@ -65,9 +69,14 @@ export function OperationalDashboard() {
   const navigate = useNavigate();
   const { filters, debounced, setFilters } = useFilters();
   const tasks = usePerformanceTasks(debounced);
+  const metrics = useMetrics(debounced);
+  const reconciliation = useReconciliation(debounced);
   const shifts = useShifts();
   const settings = useSettings();
   const reversed = useReversedReceipts(debounced);
+
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
 
   const slaMinutes = useMemo(() => {
     const row = (settings.data ?? []).find((s) => s.key === "storage_sla_minutes");
@@ -107,13 +116,29 @@ export function OperationalDashboard() {
     [summaries],
   );
 
-  /** SLA geral: % de paletes armazenados dentro do tempo alvo (puxada → armazenagem). */
-  const slaPct = useMemo(() => {
-    const minutes = pairPullToStorage(tasks.data ?? []).map((p) => p.minutes);
-    return minutes.length > 0
-      ? (minutes.filter((m) => m <= slaMinutes).length / minutes.length) * 100
-      : null;
-  }, [tasks.data, slaMinutes]);
+  /** Tarefas de puxada (1020) em aberto, somadas das ordens do período. */
+  const openTasks = useMemo(() => {
+    let tasksCount = 0;
+    let ordersWithOpen = 0;
+    for (const r of metrics.data ?? []) {
+      if ((r.open_task_count ?? 0) > 0) {
+        tasksCount += r.open_task_count ?? 0;
+        ordersWithOpen += 1;
+      }
+    }
+    return { tasksCount, ordersWithOpen };
+  }, [metrics.data]);
+
+  const reconciliationStats = useMemo(() => {
+    const rowsR = reconciliation.data ?? [];
+    let positive = 0;
+    let negative = 0;
+    for (const r of rowsR) {
+      if (r.classification === "positive") positive += 1;
+      else if (r.classification === "negative") negative += 1;
+    }
+    return { positive, negative };
+  }, [reconciliation.data]);
 
   const daily = useMemo<DailyPoint[]>(() => {
     const map = new Map<string, DailyPoint>();
@@ -186,13 +211,40 @@ export function OperationalDashboard() {
     else exportCsv(`${base}.csv`, out);
   };
 
-  if (tasks.isLoading) {
+  const openOpenTasks = () => {
+    setFilters({ ...filters, openTasksOnly: true });
+    navigate("/ordens");
+  };
+
+  const openDivergence = (kind: "positive" | "negative") => {
+    setFilters({ ...filters, divergence: kind });
+    navigate("/ordens");
+  };
+
+  const handleExportDashboard = async () => {
+    setExporting(true);
+    try {
+      await downloadDashboardPng(
+        rootRef.current,
+        `dashboard_operacional_${debounced.period}_${new Date().toISOString().slice(0, 10)}.png`,
+      );
+    } catch (e) {
+      console.error("export failed", e);
+      toast.error("Não foi possível gerar o PNG do dashboard.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const loading = tasks.isLoading || metrics.isLoading || shifts.isLoading;
+
+  if (loading) {
     return (
       <div className="flex flex-col gap-4">
         <Skeleton className="h-9 w-64" />
         <Skeleton className="h-14 w-full" />
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
-          {Array.from({ length: 9 }).map((_, i) => (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-24 w-full" />
           ))}
         </div>
@@ -200,22 +252,36 @@ export function OperationalDashboard() {
     );
   }
 
-  const slaTone = slaPct === null ? "neutral" : slaPct >= 90 ? "success" : slaPct >= 60 ? "warning" : "danger";
-
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Dashboard Operacional</h1>
-        <p className="text-sm text-muted-foreground">
-          Visão da operação: puxada, armazenagem, SLA e estornos
-        </p>
+    <div ref={rootRef} className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Dashboard Operacional</h1>
+          <p className="text-sm text-muted-foreground">
+            Visão da operação: puxada, armazenagem, tarefas, divergências e estornos
+          </p>
+        </div>
+        {metrics.data && metrics.data.length > 0 ? (
+          <Button
+            variant="outline"
+            size="sm"
+            data-export-hide
+            onClick={handleExportDashboard}
+            disabled={exporting}
+          >
+            {exporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Baixar dashboard (PNG)
+          </Button>
+        ) : null}
       </div>
 
       <FilterBar filters={filters} onChange={setFilters} showShiftFilters />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
-        <Kpi label="Paletes puxados" value={fmtInt(totals.pulls)} icon={ArrowUpFromLine} tone="info" />
-        <Kpi label="Paletes armazenados" value={fmtInt(totals.stores)} icon={ArrowDownToLine} tone="success" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi label="Qtd puxada" value={fmtQty(totals.pullQty)} icon={Package} />
         <Kpi
           label="Qtd. armazenada"
@@ -225,22 +291,32 @@ export function OperationalDashboard() {
           sub={`${fmtInt(totals.stores)} paletes armazenados`}
         />
         <Kpi
-          label="SLA (puxada → armazenagem)"
-          value={slaPct === null ? "—" : fmtPercent(slaPct)}
-          icon={Gauge}
-          tone={slaTone}
-          sub={`Alvo de ${fmtInt(slaMinutes)} min · igual ao menu Performance`}
-          onClick={() => navigate("/performance")}
+          label="Tarefas de puxada em aberto"
+          value={fmtInt(openTasks.tasksCount)}
+          icon={Timer}
+          tone="warning"
+          sub={`${fmtInt(openTasks.ordersWithOpen)} ordens aguardando`}
+          onClick={openOpenTasks}
         />
-        <Kpi
-          label="SLA alvo"
-          value={`${fmtInt(slaMinutes)} min`}
-          icon={Gauge}
-          sub="Configurável em Configurações"
-        />
-        <Kpi label="Tarefas abertas" value={fmtInt(totals.open)} icon={CircleDashed} tone="neutral" />
+        <Kpi label="Tarefas abertas (MON)" value={fmtInt(totals.open)} icon={CircleDashed} tone="neutral" />
         <Kpi label="Em espera" value={fmtInt(totals.waiting)} icon={Timer} tone="warning" />
         <Kpi label="Estornadas" value={fmtInt(totals.reversed)} icon={AlertTriangle} tone="danger" />
+        <Kpi
+          label="Físico > SAP"
+          value={fmtInt(reconciliationStats.positive)}
+          icon={Scale}
+          tone="warning"
+          sub="Puxado a mais que o fornecimento"
+          onClick={() => openDivergence("positive")}
+        />
+        <Kpi
+          label="Físico < SAP"
+          value={fmtInt(reconciliationStats.negative)}
+          icon={Scale}
+          tone="danger"
+          sub="Faltou puxar do fornecimento"
+          onClick={() => openDivergence("negative")}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -259,8 +335,12 @@ export function OperationalDashboard() {
               <XAxis dataKey="day" fontSize={11} stroke="hsl(var(--muted-foreground))" />
               <YAxis fontSize={11} stroke="hsl(var(--muted-foreground))" />
               <Tooltip {...CHART_TOOLTIP} />
-              <Bar dataKey="pulls" name="Puxadas" fill={C.primary} radius={[3, 3, 0, 0]} />
-              <Bar dataKey="stores" name="Armazenagens" fill={C.success} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="pulls" name="Puxadas" fill={C.primary} radius={[3, 3, 0, 0]}>
+                <LabelList dataKey="pulls" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => fmtInt(Number(v))} />
+              </Bar>
+              <Bar dataKey="stores" name="Armazenagens" fill={C.success} radius={[3, 3, 0, 0]}>
+                <LabelList dataKey="stores" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => fmtInt(Number(v))} />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -280,8 +360,12 @@ export function OperationalDashboard() {
               <XAxis dataKey="day" fontSize={11} stroke="hsl(var(--muted-foreground))" />
               <YAxis fontSize={11} stroke="hsl(var(--muted-foreground))" />
               <Tooltip {...CHART_TOOLTIP} />
-              <Bar dataKey="pullQty" name="Qtd puxada" fill={C.primary} radius={[3, 3, 0, 0]} />
-              <Bar dataKey="storeQty" name="Qtd armazenada" fill={C.success} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="pullQty" name="Qtd puxada" fill={C.primary} radius={[3, 3, 0, 0]}>
+                <LabelList dataKey="pullQty" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => fmtQty(Number(v))} />
+              </Bar>
+              <Bar dataKey="storeQty" name="Qtd armazenada" fill={C.success} radius={[3, 3, 0, 0]}>
+                <LabelList dataKey="storeQty" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => fmtQty(Number(v))} />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -298,7 +382,9 @@ export function OperationalDashboard() {
               <XAxis dataKey="day" fontSize={11} stroke="hsl(var(--muted-foreground))" />
               <YAxis fontSize={11} stroke="hsl(var(--muted-foreground))" />
               <Tooltip {...CHART_TOOLTIP} />
-              <Line type="monotone" dataKey="saldo" name="Saldo" stroke={C.warning} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="saldo" name="Saldo" stroke={C.warning} strokeWidth={2} dot={false}>
+                <LabelList dataKey="saldo" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => fmtInt(Number(v))} />
+              </Line>
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -346,10 +432,10 @@ export function OperationalDashboard() {
             <Badge variant="danger">{fmtInt(reversedStats.count)}</Badge>
           </p>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => exportReversed("excel")}>
+            <Button variant="outline" size="sm" data-export-hide onClick={() => exportReversed("excel")}>
               <SheetIcon className="h-4 w-4" /> Excel
             </Button>
-            <Button variant="outline" size="sm" onClick={() => exportReversed("csv")}>
+            <Button variant="outline" size="sm" data-export-hide onClick={() => exportReversed("csv")}>
               <FileText className="h-4 w-4" /> CSV
             </Button>
           </div>

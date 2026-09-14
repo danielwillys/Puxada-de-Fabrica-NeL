@@ -1,17 +1,22 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
+  ArrowDownToLine,
   ArrowRight,
+  ArrowUpFromLine,
   Boxes,
   CheckCircle2,
   CircleDashed,
+  Download,
   Factory,
+  Gauge,
   Inbox,
+  Loader2,
   Package,
-  Scale,
   Timer,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Area,
   AreaChart,
@@ -32,19 +37,23 @@ import { FilterBar } from "@/components/filter-bar";
 import { InfoPopover } from "@/components/info-popover";
 import { KpiCard } from "@/components/kpi-card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useDailyPulled,
   useImports,
   useMetrics,
-  useReconciliation,
+  usePerformanceTasks,
   useSettings,
+  useShifts,
   periodToRange,
   type GlobalFilters,
 } from "@/lib/queries";
+import { buildShiftSummaries, pairPullToStorage } from "@/lib/performance";
+import { downloadDashboardPng } from "@/lib/png-export";
 import { useFilters } from "@/context/filters-context";
-import { fmtInt, fmtQty } from "@/lib/format";
+import { fmtInt, fmtPercent, fmtQty } from "@/lib/format";
 import { type ProductionOrderMetric } from "@/lib/types";
 import { C, CHART_TOOLTIP, ChartCard } from "./shared";
 
@@ -158,10 +167,14 @@ export function ManagerialDashboard() {
   const navigate = useNavigate();
   const { filters, debounced, setFilters } = useFilters();
   const metrics = useMetrics(debounced);
-  const reconciliation = useReconciliation(debounced);
+  const tasks = usePerformanceTasks(debounced);
+  const shifts = useShifts();
   const imports = useImports();
   const dailyPulled = useDailyPulled(debounced);
   const settings = useSettings();
+
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
 
   const rows = useMemo(() => metrics.data ?? [], [metrics.data]);
   const hasAnyImport = (imports.data?.length ?? 0) > 0;
@@ -173,6 +186,47 @@ export function ManagerialDashboard() {
     const n = typeof v === "number" ? v : Number(v);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [settings.data]);
+
+  const slaMinutes = useMemo(() => {
+    const row = (settings.data ?? []).find((s) => s.key === "storage_sla_minutes");
+    const v = row?.value;
+    const n = typeof v === "number" ? v : Number(v ?? 30);
+    return Number.isFinite(n) && n > 0 ? n : 30;
+  }, [settings.data]);
+
+  const shiftInputs = useMemo(
+    () =>
+      (shifts.data ?? [])
+        .filter((s) => s.active)
+        .map((s) => ({ id: s.id, code: s.code, name: s.name })),
+    [shifts.data],
+  );
+
+  const summaries = useMemo(
+    () => buildShiftSummaries(tasks.data ?? [], shiftInputs, slaMinutes),
+    [tasks.data, shiftInputs, slaMinutes],
+  );
+
+  const pallets = useMemo(
+    () =>
+      summaries.reduce(
+        (acc, s) => {
+          acc.pulls += s.pulls;
+          acc.stores += s.stores;
+          return acc;
+        },
+        { pulls: 0, stores: 0 },
+      ),
+    [summaries],
+  );
+
+  /** SLA geral: % de paletes armazenados dentro do tempo alvo (puxada → armazenagem). */
+  const slaPct = useMemo(() => {
+    const minutes = pairPullToStorage(tasks.data ?? []).map((p) => p.minutes);
+    return minutes.length > 0
+      ? (minutes.filter((m) => m <= slaMinutes).length / minutes.length) * 100
+      : null;
+  }, [tasks.data, slaMinutes]);
 
   const range =
     debounced.period !== "custom"
@@ -199,8 +253,6 @@ export function ManagerialDashboard() {
       inProgress: 0,
       completed: 0,
       excessCount: 0,
-      openTasks: 0,
-      ordersWithOpenTasks: 0,
     };
     for (const r of rows) {
       t.orders += 1;
@@ -208,24 +260,26 @@ export function ManagerialDashboard() {
       if (r.status === "in_progress") t.inProgress += 1;
       if (r.status === "completed") t.completed += 1;
       if (r.status === "excess") t.excessCount += 1;
-      if ((r.open_task_count ?? 0) > 0) {
-        t.openTasks += r.open_task_count ?? 0;
-        t.ordersWithOpenTasks += 1;
-      }
     }
     return t;
   }, [rows]);
 
-  const reconciliationStats = useMemo(() => {
-    const rowsR = reconciliation.data ?? [];
-    let positive = 0;
-    let negative = 0;
-    for (const r of rowsR) {
-      if (r.classification === "positive") positive += 1;
-      else if (r.classification === "negative") negative += 1;
-    }
-    return { positive, negative };
-  }, [reconciliation.data]);
+  /** Percentual geral da eficiência: dias com puxado abaixo da meta ÷ total de dias. */
+  const goalStats = useMemo(() => {
+    if (!goal) return null;
+    const days = pulledByDay.filter((p) => p.day !== "sem data");
+    const total = days.length;
+    if (total === 0) return null;
+    const below = days.filter((p) => p.pulled < goal).length;
+    return { below, total, pct: Math.round((below / total) * 100) };
+  }, [pulledByDay, goal]);
+
+  /** Eficiência geral do período (puxado ÷ produzido) — usado quando não há meta. */
+  const overallEfficiency = useMemo(() => {
+    const produced = dayPoints.reduce((a, p) => a + p.produced, 0);
+    const pulled = dayPoints.reduce((a, p) => a + p.pulled, 0);
+    return produced > 0 ? Math.min(100, Math.round((pulled / produced) * 100)) : null;
+  }, [dayPoints]);
 
   const excessByMaterial = useMemo(() => {
     const map = new Map<string, number>();
@@ -278,24 +332,31 @@ export function ManagerialDashboard() {
     navigate("/ordens");
   };
 
-  const openOpenTasks = () => {
-    setFilters({ ...filters, openTasksOnly: true });
-    navigate("/ordens");
+  const slaTone = slaPct === null ? "neutral" : slaPct >= 90 ? "success" : slaPct >= 60 ? "warning" : "danger";
+
+  const handleExportDashboard = async () => {
+    setExporting(true);
+    try {
+      await downloadDashboardPng(
+        rootRef.current,
+        `dashboard_gerencial_${debounced.period}_${new Date().toISOString().slice(0, 10)}.png`,
+      );
+    } catch (e) {
+      console.error("export failed", e);
+      toast.error("Não foi possível gerar o PNG do dashboard.");
+    } finally {
+      setExporting(false);
+    }
   };
 
-  const openDivergence = (kind: "positive" | "negative") => {
-    setFilters({ ...filters, divergence: kind });
-    navigate("/ordens");
-  };
-
-  const loading = metrics.isLoading;
+  const loading = metrics.isLoading || tasks.isLoading || shifts.isLoading;
 
   if (loading) {
     return (
       <div className="flex flex-col gap-4">
         <Skeleton className="h-9 w-64" />
         <Skeleton className="h-14 w-full" />
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-24 w-full" />
           ))}
@@ -305,12 +366,30 @@ export function ManagerialDashboard() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Dashboard Gerencial</h1>
-        <p className="text-sm text-muted-foreground">
-          Visão de decisão: ordens, eficiência, excessos e divergências SAP × físico
-        </p>
+    <div ref={rootRef} className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Dashboard Gerencial</h1>
+          <p className="text-sm text-muted-foreground">
+            Visão de decisão: ordens, paletes, SLA (puxada → armazenagem) e metas
+          </p>
+        </div>
+        {rows.length > 0 ? (
+          <Button
+            variant="outline"
+            size="sm"
+            data-export-hide
+            onClick={handleExportDashboard}
+            disabled={exporting}
+          >
+            {exporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Baixar dashboard (PNG)
+          </Button>
+        ) : null}
       </div>
 
       <FilterBar filters={filters} onChange={setFilters} />
@@ -336,7 +415,7 @@ export function ManagerialDashboard() {
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <KpiCard label="Ordens" value={fmtInt(totals.orders)} icon={Boxes} />
             <KpiCard
               label="Não iniciadas"
@@ -367,28 +446,24 @@ export function ManagerialDashboard() {
               onClick={() => openStatus("excess")}
             />
             <KpiCard
-              label="Tarefas de puxada em aberto"
-              value={fmtInt(totals.openTasks)}
-              icon={Timer}
-              tone="warning"
-              sub={`${fmtInt(totals.ordersWithOpenTasks)} ordens aguardando`}
-              onClick={openOpenTasks}
+              label="Paletes puxados"
+              value={fmtInt(pallets.pulls)}
+              icon={ArrowUpFromLine}
+              tone="info"
             />
             <KpiCard
-              label="Físico > SAP"
-              value={fmtInt(reconciliationStats.positive)}
-              icon={Scale}
-              tone="warning"
-              sub="Puxado a mais que o fornecimento"
-              onClick={() => openDivergence("positive")}
+              label="Paletes armazenados"
+              value={fmtInt(pallets.stores)}
+              icon={ArrowDownToLine}
+              tone="success"
             />
             <KpiCard
-              label="Físico < SAP"
-              value={fmtInt(reconciliationStats.negative)}
-              icon={Scale}
-              tone="danger"
-              sub="Faltou puxar do fornecimento"
-              onClick={() => openDivergence("negative")}
+              label="SLA (puxada → armazenagem)"
+              value={slaPct === null ? "—" : fmtPercent(slaPct)}
+              icon={Gauge}
+              tone={slaTone}
+              sub={`Alvo de ${fmtInt(slaMinutes)} min · igual ao menu Performance`}
+              onClick={() => navigate("/performance")}
             />
           </div>
 
@@ -436,17 +511,44 @@ export function ManagerialDashboard() {
                   <YAxis fontSize={11} stroke="hsl(var(--muted-foreground))" />
                   <Tooltip {...CHART_TOOLTIP} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="planned" name="Planejado" fill={C.muted} radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="produced" name="Apontado" fill={C.primary} radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="pulled" name="Puxado" fill={C.success} radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="pending" name="Pendente" fill={C.danger} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="planned" name="Planejado" fill={C.muted} radius={[3, 3, 0, 0]}>
+                    <LabelList dataKey="planned" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => valueLabel(Number(v))} />
+                  </Bar>
+                  <Bar dataKey="produced" name="Apontado" fill={C.primary} radius={[3, 3, 0, 0]}>
+                    <LabelList dataKey="produced" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => valueLabel(Number(v))} />
+                  </Bar>
+                  <Bar dataKey="pulled" name="Puxado" fill={C.success} radius={[3, 3, 0, 0]}>
+                    <LabelList dataKey="pulled" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => valueLabel(Number(v))} />
+                  </Bar>
+                  <Bar dataKey="pending" name="Pendente" fill={C.danger} radius={[3, 3, 0, 0]}>
+                    <LabelList dataKey="pending" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => valueLabel(Number(v))} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
 
             <ChartCard
               title="Eficiência ao longo do tempo"
-              sub="Puxado (Recebimento) ÷ produzido (GMEIN) por dia. Máx. 100%"
+              sub={
+                goal
+                  ? "Puxado ÷ produzido por dia · % geral = dias abaixo da meta ÷ total de dias"
+                  : "Puxado ÷ produzido por dia · defina a meta diária em Configurações"
+              }
+              stat={
+                goalStats
+                  ? {
+                      value: `${goalStats.pct}%`,
+                      label: `dos dias abaixo da meta (${goalStats.below} de ${goalStats.total})`,
+                      tone: goalStats.pct > 50 ? "danger" : goalStats.pct > 25 ? "warning" : "success",
+                    }
+                  : overallEfficiency !== null
+                    ? {
+                        value: `${overallEfficiency}%`,
+                        label: "eficiência geral do período",
+                        tone: overallEfficiency >= 90 ? "success" : overallEfficiency >= 70 ? "warning" : "danger",
+                      }
+                    : undefined
+              }
               exportName={`eficiencia_${debounced.period}.png`}
               exportLegend={[{ name: "Eficiência %", color: C.primary }]}
               help={{
@@ -458,9 +560,9 @@ export function ManagerialDashboard() {
                       "Eficiência = puxado ÷ produzido, limitada a 100%. Usa o produzido real, não o planejado.",
                   },
                   {
-                    term: "Por que produzido?",
+                    term: "Percentual geral",
                     definition:
-                      "Se planejou x e produziu y, o real da operação é y. A eficiência mede quanto do que foi realmente produzido já foi puxado.",
+                      "Quando há meta diária configurada, mostra o percentual de dias em que a puxada ficou abaixo da meta (dias abaixo ÷ total de dias). Sem meta, mostra a eficiência geral do período.",
                   },
                 ],
               }}
@@ -478,7 +580,15 @@ export function ManagerialDashboard() {
                     stroke={C.primary}
                     strokeWidth={2}
                     dot={false}
-                  />
+                  >
+                    <LabelList
+                      dataKey="efficiency"
+                      position="top"
+                      fontSize={9}
+                      fill="hsl(var(--muted-foreground))"
+                      formatter={(v) => `${Math.round(Number(v))}%`}
+                    />
+                  </Line>
                 </LineChart>
               </ResponsiveContainer>
             </ChartCard>
@@ -505,12 +615,14 @@ export function ManagerialDashboard() {
               }}
             >
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={excessByMaterial} layout="vertical" margin={{ left: 30 }}>
+                <BarChart data={excessByMaterial} layout="vertical" margin={{ left: 30, right: 24 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis type="number" fontSize={11} stroke="hsl(var(--muted-foreground))" />
                   <YAxis type="category" dataKey="name" fontSize={11} stroke="hsl(var(--muted-foreground))" width={100} />
                   <Tooltip {...CHART_TOOLTIP} />
-                  <Bar dataKey="value" name="Excesso" fill={C.danger} radius={[0, 3, 3, 0]} />
+                  <Bar dataKey="value" name="Excesso" fill={C.danger} radius={[0, 3, 3, 0]}>
+                    <LabelList dataKey="value" position="right" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => valueLabel(Number(v))} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
@@ -519,13 +631,13 @@ export function ManagerialDashboard() {
               title="Puxado físico por dia"
               sub={
                 goal
-                  ? `Valores sobre as barras · linha tracejada = meta diária de ${fmtQty(goal)} (Configurações)`
+                  ? `Valores sobre as barras · linha vermelha = meta diária de ${fmtQty(goal)} (Configurações)`
                   : "Valores sobre as barras · defina a meta diária em Configurações"
               }
               exportName={`puxado_fisico_por_dia_${debounced.period}.png`}
               exportLegend={[
                 { name: "Puxado", color: C.success },
-                ...(goal ? [{ name: `Meta diária (${fmtQty(goal)})`, color: C.warning }] : []),
+                ...(goal ? [{ name: `Meta diária (${fmtQty(goal)})`, color: C.danger }] : []),
               ]}
               help={{
                 title: "Puxado físico",
@@ -543,7 +655,7 @@ export function ManagerialDashboard() {
                   {
                     term: "Meta diária",
                     definition:
-                      "Linha tracejada amarela: meta de caixas por dia configurada pelo administrador em Configurações.",
+                      "Linha vermelha tracejada: meta de caixas por dia configurada pelo administrador em Configurações.",
                   },
                 ],
               }}
@@ -564,13 +676,14 @@ export function ManagerialDashboard() {
                   {goal ? (
                     <ReferenceLine
                       y={goal}
-                      stroke={C.warning}
-                      strokeDasharray="5 4"
+                      stroke={C.danger}
+                      strokeWidth={2}
+                      strokeDasharray="6 4"
                       label={{
                         value: `Meta ${valueLabel(goal)}`,
                         position: "insideTopRight",
                         fontSize: 11,
-                        fill: C.warning,
+                        fill: C.danger,
                       }}
                     />
                   ) : null}

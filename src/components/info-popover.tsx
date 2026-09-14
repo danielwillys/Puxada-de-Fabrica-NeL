@@ -32,6 +32,7 @@ export function InfoPopover({
         <button
           type="button"
           aria-label="Ajuda"
+          data-export-hide
           className={cn(
             "inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
             className,

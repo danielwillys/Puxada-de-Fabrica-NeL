@@ -6,6 +6,7 @@
  * HTML). Por isso compomos o PNG manualmente em um canvas: fundo branco,
  * título, subtítulo, o gráfico e a legenda.
  */
+import { toPng } from "html-to-image";
 
 function resolveVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -135,4 +136,26 @@ export function downloadChartPng(
   };
   img.onerror = () => URL.revokeObjectURL(url);
   img.src = url;
+}
+
+/**
+ * Exporta o dashboard inteiro (título, filtros, cards e gráficos) como um único
+ * PNG. Elementos com o atributo `data-export-hide` (ex.: botões de download)
+ * ficam de fora da imagem.
+ */
+export async function downloadDashboardPng(
+  node: HTMLElement | null,
+  filename: string,
+): Promise<void> {
+  if (!node) return;
+  const dataUrl = await toPng(node, {
+    pixelRatio: 2,
+    backgroundColor: "#ffffff",
+    filter: (el) =>
+      !(el instanceof HTMLElement && el.hasAttribute("data-export-hide")),
+  });
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = filename;
+  a.click();
 }

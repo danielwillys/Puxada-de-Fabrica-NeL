@@ -35,6 +35,7 @@ export function ChartCard({
   help,
   exportName,
   exportLegend,
+  stat,
 }: {
   title: string;
   sub?: string;
@@ -44,6 +45,8 @@ export function ChartCard({
   /** Nome do arquivo PNG; quando presente, exibe o botão de download. */
   exportName?: string;
   exportLegend?: ChartExportOptions["legend"];
+  /** Percentual/resumo geral exibido no cabeçalho do card. */
+  stat?: { value: string; label: string; tone?: "success" | "warning" | "danger" | "neutral" };
 }) {
   const ref = useRef<HTMLDivElement>(null);
   return (
@@ -54,10 +57,43 @@ export function ChartCard({
           {sub ? <p className="text-xs text-muted-foreground">{sub}</p> : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {stat ? (
+            <div
+              className={cn(
+                "rounded-md px-2 py-1 text-right",
+                stat.tone === "success"
+                  ? "bg-success/10"
+                  : stat.tone === "warning"
+                    ? "bg-warning/15"
+                    : stat.tone === "danger"
+                      ? "bg-danger/10"
+                      : "bg-primary/10",
+              )}
+            >
+              <p
+                className={cn(
+                  "text-lg font-bold tabular-nums leading-tight",
+                  stat.tone === "success"
+                    ? "text-success"
+                    : stat.tone === "warning"
+                      ? "text-warning"
+                      : stat.tone === "danger"
+                        ? "text-danger"
+                        : "text-primary",
+                )}
+              >
+                {stat.value}
+              </p>
+              <p className="max-w-[140px] truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+                {stat.label}
+              </p>
+            </div>
+          ) : null}
           {exportName ? (
             <Button
               variant="ghost"
               size="icon"
+              data-export-hide
               className="h-6 w-6 text-muted-foreground hover:text-foreground"
               title="Baixar gráfico em PNG"
               onClick={() =>
