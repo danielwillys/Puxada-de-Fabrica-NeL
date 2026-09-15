@@ -9,6 +9,8 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   ShieldCheck,
   UserRoundCog,
@@ -55,7 +57,14 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/auditoria", label: "Auditoria", icon: ShieldCheck, permission: "audit" },
 ];
 
-function NavList({ onNavigate }: { onNavigate?: () => void }) {
+function NavList({
+  onNavigate,
+  collapsed = false,
+}: {
+  onNavigate?: () => void;
+  /** Modo recolhido: mostra apenas os ícones. */
+  collapsed?: boolean;
+}) {
   const { profile, permissions } = useAuth();
   const isAdmin = profile?.role === "admin";
   const items = NAV_ITEMS.filter(
@@ -69,9 +78,11 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
           to={item.to}
           end={item.exact}
           onClick={onNavigate}
+          title={collapsed ? item.label : undefined}
           className={({ isActive }) =>
             cn(
               "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              collapsed && "justify-center px-0",
               isActive
                 ? "bg-sidebar-accent text-sidebar-primary"
                 : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
@@ -79,50 +90,54 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
           }
         >
           <item.icon className="h-4 w-4 shrink-0" />
-          {item.label}
+          {!collapsed ? item.label : null}
         </NavLink>
       ))}
     </nav>
   );
 }
 
-function Brand() {
+function Brand({ collapsed = false }: { collapsed?: boolean }) {
   return (
-    <div className="flex items-center gap-2.5 px-2">
+    <div className={cn("flex items-center gap-2.5 px-2", collapsed && "justify-center px-0")}>
       <img
         src="/logo.png"
         alt="Puxada de Fábrica N&L"
         className="h-9 w-9 rounded-lg object-cover"
       />
-      <div className="leading-tight">
-        <p className="text-sm font-semibold tracking-wide text-sidebar-foreground">
-          Puxada de Fábrica N&L
-        </p>
-        <p className="text-[11px] text-sidebar-foreground/60">
-          Operação & Rastreabilidade
-        </p>
-      </div>
+      {!collapsed ? (
+        <div className="leading-tight">
+          <p className="text-sm font-semibold tracking-wide text-sidebar-foreground">
+            Puxada de Fábrica N&L
+          </p>
+          <p className="text-[11px] text-sidebar-foreground/60">
+            Operação & Rastreabilidade
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function SidebarFooter() {
+function SidebarFooter({ collapsed = false }: { collapsed?: boolean }) {
   const { profile, signOut } = useAuth();
   return (
     <div className="border-t border-sidebar-border pt-3">
-      <div className="flex items-center justify-between gap-2 px-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-sidebar-foreground">
-            {profile?.name || profile?.email}
-          </p>
-          <p className="truncate text-xs text-sidebar-foreground/60">
-            {ROLE_LABEL(profile?.role ?? "operator")}
-          </p>
-        </div>
+      <div className={cn("flex items-center gap-2 px-2", collapsed && "justify-center px-0")}>
+        {!collapsed ? (
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-sidebar-foreground">
+              {profile?.name || profile?.email}
+            </p>
+            <p className="truncate text-xs text-sidebar-foreground/60">
+              {ROLE_LABEL(profile?.role ?? "operator")}
+            </p>
+          </div>
+        ) : null}
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          className="h-8 w-8 shrink-0 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
           onClick={() => signOut()}
           title="Sair"
         >
@@ -137,6 +152,16 @@ export function AppLayout() {
   const { profile, initialized } = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("converge.sidebar.collapsed") === "1",
+  );
+
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      localStorage.setItem("converge.sidebar.collapsed", c ? "0" : "1");
+      return !c;
+    });
+  };
 
   if (!initialized) {
     return (
@@ -161,12 +186,17 @@ export function AppLayout() {
   return (
     <div className="flex h-full overflow-hidden">
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 shrink-0 flex-col gap-6 bg-sidebar p-4 lg:flex">
-        <Brand />
+      <aside
+        className={cn(
+          "hidden shrink-0 flex-col gap-6 bg-sidebar p-4 transition-[width] duration-200 lg:flex",
+          collapsed ? "w-[68px]" : "w-64",
+        )}
+      >
+        <Brand collapsed={collapsed} />
         <div className="flex-1">
-          <NavList />
+          <NavList collapsed={collapsed} />
         </div>
-        <SidebarFooter />
+        <SidebarFooter collapsed={collapsed} />
       </aside>
 
       {/* Mobile drawer */}
@@ -186,7 +216,20 @@ export function AppLayout() {
 
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur">
+        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="hidden lg:inline-flex"
+            onClick={toggleCollapsed}
+            title={collapsed ? "Expandir menu" : "Recolher menu"}
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="h-5 w-5" />
+            ) : (
+              <PanelLeftClose className="h-5 w-5" />
+            )}
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -200,19 +243,15 @@ export function AppLayout() {
               Operação em tempo real
             </Badge>
           </div>
-          <div className="ml-auto flex items-center gap-3">
-            <span className="hidden text-sm text-muted-foreground sm:block">
-              {profile?.name || profile?.email}
-            </span>
-            <Badge variant={profile?.role === "admin" ? "info" : "secondary"}>
-              {ROLE_LABEL(profile?.role ?? "operator")}
-            </Badge>
-          </div>
         </header>
 
         <main className="flex-1 overflow-auto p-4 md:p-6">
           <Outlet />
         </main>
+
+        <footer className="shrink-0 border-t px-4 py-3 text-center text-xs text-muted-foreground">
+          Desenvolvido por: Daniel Willys - Supervisor Armazém
+        </footer>
       </div>
     </div>
   );
