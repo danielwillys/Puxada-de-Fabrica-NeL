@@ -665,3 +665,31 @@ export function useUserRoles() {
     staleTime: 15_000,
   });
 }
+
+// -------------------------------------------------- automação SAP (robô)
+
+export interface IngestionToken {
+  id: number;
+  name: string;
+  token_prefix: string;
+  active: boolean;
+  created_at: string;
+  last_used_at: string | null;
+  last_used_type: string | null;
+  use_count: number;
+}
+
+export function useIngestionTokens() {
+  return useQuery({
+    queryKey: ["ingestion-tokens"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("ingestion_tokens")
+        .select("id,name,token_prefix,active,created_at,last_used_at,last_used_type,use_count")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as unknown as IngestionToken[];
+    },
+    staleTime: 10_000,
+  });
+}

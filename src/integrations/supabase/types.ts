@@ -3403,6 +3403,7 @@ export type Database = {
           imported_by: string | null
           inserted_records: number
           rejected_records: number
+          source: string
           status: string
           total_records: number
           updated_records: number
@@ -3416,6 +3417,7 @@ export type Database = {
           imported_by?: string | null
           inserted_records?: number
           rejected_records?: number
+          source?: string
           status?: string
           total_records?: number
           updated_records?: number
@@ -3429,9 +3431,49 @@ export type Database = {
           imported_by?: string | null
           inserted_records?: number
           rejected_records?: number
+          source?: string
           status?: string
           total_records?: number
           updated_records?: number
+        }
+        Relationships: []
+      }
+      ingestion_tokens: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: number
+          last_used_at: string | null
+          last_used_type: string | null
+          name: string
+          token_hash: string
+          token_prefix: string
+          use_count: number
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: number
+          last_used_at?: string | null
+          last_used_type?: string | null
+          name: string
+          token_hash: string
+          token_prefix: string
+          use_count?: number
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: number
+          last_used_at?: string | null
+          last_used_type?: string | null
+          name?: string
+          token_hash?: string
+          token_prefix?: string
+          use_count?: number
         }
         Relationships: []
       }

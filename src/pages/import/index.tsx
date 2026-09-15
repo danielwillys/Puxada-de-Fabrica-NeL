@@ -44,6 +44,7 @@ import { parseExcel } from "@/lib/excel";
 import { fmtDateTime, fmtInt } from "@/lib/format";
 import { useImports } from "@/lib/queries";
 import { IMPORT_TYPE_META as IMPORT_META_LABELS } from "@/lib/types";
+import { SapAutomationCard } from "./sap-automation";
 import { cn } from "@/lib/utils";
 
 const TYPES: ImportType[] = ["cooispi", "recebimento", "mon"];
@@ -399,6 +400,8 @@ export function ImportPage() {
         ) : null}
       </Card>
 
+      <SapAutomationCard />
+
       <Card className="p-4">
         <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
           <RefreshCw className="h-4 w-4 text-primary" /> Histórico de importações
@@ -417,6 +420,7 @@ export function ImportPage() {
                   <TableHead>Data</TableHead>
                   <TableHead>Arquivo</TableHead>
                   <TableHead>Tipo</TableHead>
+                  <TableHead>Origem</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead className="text-right">Inseridas</TableHead>
                   <TableHead className="text-right">Atualizadas</TableHead>
@@ -434,6 +438,13 @@ export function ImportPage() {
                         {IMPORT_META_LABELS[r.file_type]?.label.split(" — ")[0] ?? r.file_type}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      {(r as { source?: string }).source === "auto" ? (
+                        <Badge variant="info">Automática</Badge>
+                      ) : (
+                        <Badge variant="secondary">Manual</Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{fmtInt(r.total_records)}</TableCell>
                     <TableCell className="text-right tabular-nums">{fmtInt(r.inserted_records)}</TableCell>
                     <TableCell className="text-right tabular-nums">{fmtInt(r.updated_records)}</TableCell>
@@ -447,7 +458,7 @@ export function ImportPage() {
                 ))}
                 {(imports.data ?? []).length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
                       Nenhuma importação realizada ainda.
                     </TableCell>
                   </TableRow>
