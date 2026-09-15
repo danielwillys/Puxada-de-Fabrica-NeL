@@ -54,6 +54,8 @@ import {
   type ShiftSummary,
 } from "@/lib/performance";
 import { downloadDashboardPng } from "@/lib/png-export";
+import { sortRows, type SortState } from "@/lib/sort";
+import { SortableTh } from "@/components/sortable-th";
 import { useFilters } from "@/context/filters-context";
 import { C, CHART_TOOLTIP, ChartCard, Kpi } from "./shared";
 
@@ -194,6 +196,17 @@ export function OperationalDashboard() {
     }),
     [reversedRows],
   );
+
+  const [revSort, setRevSort] = useState<SortState>({ key: "document_number", dir: "asc" });
+  const reversedRowsSorted = useMemo(
+    () => sortRows(reversedRows as unknown as Record<string, unknown>[], revSort).slice(0, 50),
+    [reversedRows, revSort],
+  );
+  const toggleRevSort = (key: string) => {
+    setRevSort((s) =>
+      s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" },
+    );
+  };
 
   const exportReversed = (format: "excel" | "csv") => {
     const out = reversedRows.map((r) => ({
@@ -449,17 +462,17 @@ export function OperationalDashboard() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Documento</TableHead>
-                  <TableHead>Ordem</TableHead>
-                  <TableHead>Material</TableHead>
-                  <TableHead>Lote</TableHead>
-                  <TableHead className="text-right">Qtd.</TableHead>
-                  <TableHead>Motivo</TableHead>
-                  <TableHead>Data do estorno</TableHead>
+                  <SortableTh label="Documento" sortKey="document_number" sort={revSort} onSort={toggleRevSort} />
+                  <SortableTh label="Ordem" sortKey="production_order" sort={revSort} onSort={toggleRevSort} />
+                  <SortableTh label="Material" sortKey="material_code" sort={revSort} onSort={toggleRevSort} />
+                  <SortableTh label="Lote" sortKey="lot" sort={revSort} onSort={toggleRevSort} />
+                  <SortableTh label="Qtd." sortKey="quantity" numeric sort={revSort} onSort={toggleRevSort} />
+                  <SortableTh label="Motivo" sortKey="reversal_reason" sort={revSort} onSort={toggleRevSort} />
+                  <SortableTh label="Data do estorno" sortKey="reversed_at" sort={revSort} onSort={toggleRevSort} />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {reversedRows.slice(0, 50).map((r) => (
+                {reversedRowsSorted.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.document_number}</TableCell>
                     <TableCell>{r.production_order ?? "—"}</TableCell>

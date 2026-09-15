@@ -4122,6 +4122,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }
+      resolve_receipt_task: {
+        Args: { p_receipt_id: number }
+        Returns: number
+      }
       set_receipt_valid: {
         Args: { p_motivo?: string; p_receipt_id: number; p_valid: boolean }
         Returns: string

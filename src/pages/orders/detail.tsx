@@ -60,6 +60,8 @@ import {
 } from "@/lib/format";
 import { exportCsv, exportExcel } from "@/lib/excel";
 import { buildUcView } from "@/lib/uc-view";
+import { sortRows, type SortState } from "@/lib/sort";
+import { SortableTh } from "@/components/sortable-th";
 import { useOrderMetrics, useOrderReceipts, useOrderTasks } from "@/lib/queries";
 import type { ProductionReceipt } from "@/lib/types";
 import { TASK_STATUS_META } from "@/lib/types";
@@ -188,6 +190,26 @@ export function OrderDetail() {
   // pelo painel). Tarefas estornadas no relatório (task_status='A') são ocultadas.
   const ucRows = useMemo(() => buildUcView(tasks.data ?? []), [tasks.data]);
 
+  const [ucSort, setUcSort] = useState<SortState>({ key: "uc", dir: "asc" });
+  const [recSort, setRecSort] = useState<SortState>({ key: "document_number", dir: "asc" });
+
+  const ucRowsSorted = useMemo(
+    () => sortRows(ucRows as unknown as Record<string, unknown>[], ucSort),
+    [ucRows, ucSort],
+  );
+  const receiptListSorted = useMemo(
+    () => sortRows(receiptList as unknown as Record<string, unknown>[], recSort),
+    [receiptList, recSort],
+  );
+
+  const toggleSort = (setter: (s: SortState) => void, sort: SortState, key: string) => {
+    setter(
+      sort.key === key
+        ? { key, dir: sort.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: "asc" },
+    );
+  };
+
   const lastStorageAt = useMemo(() => {
     let max: Date | null = null;
     for (const r of receiptList) {
@@ -198,7 +220,7 @@ export function OrderDetail() {
   }, [receiptList]);
 
   const exportUcs = (format: "excel" | "csv") => {
-    const out = ucRows.map((r) => ({
+    const out = ucRowsSorted.map((r) => ({
       UC: r.uc ?? "",
       Documento: r.document ?? "",
       Material: r.material ?? "",
@@ -222,7 +244,7 @@ export function OrderDetail() {
   };
 
   const exportReceipts = (format: "excel" | "csv") => {
-    const out = receiptList.map((r) => ({
+    const out = receiptListSorted.map((r) => ({
       Documento: r.document_number,
       Produto: r.material_code,
       Descrição: r.material_description ?? "",
@@ -423,20 +445,21 @@ export function OrderDetail() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>UC</TableHead>
-                  <TableHead>Documento</TableHead>
-                  <TableHead>Material</TableHead>
-                  <TableHead>Lote</TableHead>
-                  <TableHead>PD destino</TableHead>
-                  <TableHead className="text-right">Qtd.</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Puxada</TableHead>
-                  <TableHead>Armazenagem</TableHead>
-                  <TableHead className="text-right">Espera</TableHead>
+                  <SortableTh label="UC" sortKey="uc" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
+                  <SortableTh label="Documento" sortKey="document" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
+                  <SortableTh label="Material" sortKey="material" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
+                  <SortableTh label="Lote" sortKey="lot" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
+                  <SortableTh label="PD destino" sortKey="pdDestino" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
+                  <SortableTh label="Qtd." sortKey="quantity" numeric sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
+                  <SortableTh label="UM" sortKey="unit" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
+                  <SortableTh label="Status" sortKey="status" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
+                  <SortableTh label="Puxada" sortKey="pullAt" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
+                  <SortableTh label="Armazenagem" sortKey="storageAt" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
+                  <SortableTh label="Espera" sortKey="waitMinutes" numeric sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {ucRows.map((r) => (
+                {ucRowsSorted.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.uc ?? "—"}</TableCell>
                     <TableCell>{r.document ?? "—"}</TableCell>
@@ -444,6 +467,7 @@ export function OrderDetail() {
                     <TableCell>{r.lot ?? "—"}</TableCell>
                     <TableCell>{r.pdDestino ?? "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{fmtQty(r.quantity)}</TableCell>
+                    <TableCell>{r.unit ?? "—"}</TableCell>
                     <TableCell>
                       {r.panelReversed ? (
                         <Badge variant="danger" title={r.reversalReason ?? undefined}>
@@ -476,9 +500,9 @@ export function OrderDetail() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {ucRows.length === 0 ? (
+                {ucRowsSorted.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={11} className="py-8 text-center text-muted-foreground">
                       Nenhuma UC confirmada à armazenagem para esta ordem.
                     </TableCell>
                   </TableRow>
@@ -510,22 +534,22 @@ export function OrderDetail() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Documento</TableHead>
-                <TableHead>Produto</TableHead>
-                <TableHead>Descrição</TableHead>
-                <TableHead>Lote</TableHead>
-                <TableHead className="text-right">Qtd.</TableHead>
-                <TableHead>UM</TableHead>
-                <TableHead>EM (data)</TableHead>
-                <TableHead>EM (hora)</TableHead>
-                <TableHead>Depósito (data)</TableHead>
-                <TableHead>Depósito (hora)</TableHead>
-                <TableHead>Válido</TableHead>
+                <SortableTh label="Documento" sortKey="document_number" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
+                <SortableTh label="Produto" sortKey="material_code" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
+                <SortableTh label="Descrição" sortKey="material_description" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
+                <SortableTh label="Lote" sortKey="lot" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
+                <SortableTh label="Qtd." sortKey="quantity" numeric sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
+                <SortableTh label="UM" sortKey="unit" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
+                <SortableTh label="EM (data)" sortKey="goods_receipt_date" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
+                <SortableTh label="EM (hora)" sortKey="goods_receipt_time" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
+                <SortableTh label="Depósito (data)" sortKey="storage_date" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
+                <SortableTh label="Depósito (hora)" sortKey="storage_time" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
+                <SortableTh label="Válido" sortKey="is_valid" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {receiptList.map((r) => (
+              {receiptListSorted.map((r) => (
                 <TableRow key={r.id} className={cn(!r.is_valid && "bg-danger/5")}>
                   <TableCell className="font-medium">{r.document_number}</TableCell>
                   <TableCell>{r.material_code}</TableCell>
