@@ -47,8 +47,8 @@ export interface GlobalFilters {
   shiftId: string;
   /** Dia operacional ("" = todos). Usado pelas telas de performance. */
   operationalDay: string;
-  /** Divergência SAP × físico ("" = todas, positive, negative, ok). */
-  divergence: "" | "positive" | "negative" | "ok";
+  /** Divergência SAP × físico ("" = todas, positive, negative, ok, all). */
+  divergence: "" | "positive" | "negative" | "ok" | "all";
   /** Somente ordens com tarefa de puxada em aberto (analista). */
   openTasksOnly: boolean;
 }

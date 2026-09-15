@@ -186,6 +186,7 @@ export function FilterBar({ filters, onChange, className, showShiftFilters = fal
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="todas">Todas</SelectItem>
+            <SelectItem value="all">Qualquer divergência</SelectItem>
             <SelectItem value="ok">OK (físico = SAP)</SelectItem>
             <SelectItem value="positive">Físico &gt; SAP</SelectItem>
             <SelectItem value="negative">Físico &lt; SAP</SelectItem>

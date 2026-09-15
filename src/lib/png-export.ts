@@ -5,6 +5,10 @@
  * O SVG renderizado não inclui o título/legenda (o recharts desenha a legenda em
  * HTML). Por isso compomos o PNG manualmente em um canvas: fundo branco,
  * título, subtítulo, o gráfico e a legenda.
+ *
+ * Correções de recorte:
+ * - rótulos de valor que ficam acima da área do gráfico (getBBox) são incluídos;
+ * - a legenda pode quebrar em várias linhas e a altura do canvas acompanha.
  */
 import { toPng } from "html-to-image";
 
@@ -66,18 +70,51 @@ export function downloadChartPng(
   const img = new Image();
   img.onload = () => {
     const scale = 2;
+    const pad = 24;
+    const legendItems = options.legend ?? [];
+    const titleH = 24;
+    const subH = options.sub ? 18 : 0;
+
     const chartW = svg.clientWidth || 900;
     const chartH = svg.clientHeight || 300;
 
-    const pad = 24;
-    const legend = options.legend ?? [];
-    const titleH = 24;
-    const subH = options.sub ? 18 : 0;
-    const legendH = legend.length > 0 ? 30 : 0;
-    const W = chartW + pad * 2;
-    const H = pad + titleH + subH + chartH + legendH + pad;
+    // Conteúdo que ultrapassa o topo do SVG (rótulos de valor sobre as barras
+    // mais altas) é incluído no PNG.
+    let topOverflow = 0;
+    try {
+      const bbox = svg.getBBox();
+      if (bbox && Number.isFinite(bbox.y) && bbox.y < 0) {
+        topOverflow = Math.ceil(-bbox.y);
+      }
+    } catch {
+      topOverflow = 0;
+    }
 
+    const W = chartW + pad * 2;
+
+    // Mede a legenda (pode quebrar em várias linhas) e calcula a altura final.
     const canvas = document.createElement("canvas");
+    canvas.width = W;
+    const mCtx = canvas.getContext("2d");
+    let legendRows = 0;
+    let legendH = 0;
+    if (mCtx && legendItems.length > 0) {
+      mCtx.font = "12px Inter, system-ui, sans-serif";
+      legendRows = 1;
+      let x = pad;
+      for (const item of legendItems) {
+        const w = mCtx.measureText(item.name).width + 34;
+        if (x + w > W - pad) {
+          x = pad;
+          legendRows += 1;
+        }
+        x += w;
+      }
+      legendH = legendRows * 22 + 6;
+    }
+
+    const H = pad + titleH + subH + topOverflow + chartH + legendH + pad;
+
     canvas.width = W * scale;
     canvas.height = H * scale;
     const ctx = canvas.getContext("2d");
@@ -102,15 +139,16 @@ export function downloadChartPng(
       y += subH;
     }
 
-    ctx.drawImage(img, pad, y, chartW, chartH);
-    y += chartH;
+    // Desenha o gráfico deslocado para baixo para incluir o que sobra acima.
+    ctx.drawImage(img, pad, y + topOverflow, chartW, chartH);
+    y += topOverflow + chartH;
 
-    if (legend.length > 0) {
+    if (legendItems.length > 0) {
       ctx.fillStyle = "#334155";
       ctx.font = "12px Inter, system-ui, sans-serif";
       let x = pad;
       let rowY = y + 20;
-      for (const item of legend) {
+      for (const item of legendItems) {
         const w = ctx.measureText(item.name).width + 34;
         if (x + w > W - pad) {
           x = pad;
