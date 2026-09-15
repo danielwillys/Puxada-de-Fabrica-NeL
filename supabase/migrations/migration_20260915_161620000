@@ -1,0 +1,119 @@
+create or replace function public.resolve_receipt_task(p_receipt_id bigint)
+returns bigint
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+declare
+  r record;
+  v_id bigint;
+  v_count bigint;
+begin
+  select * into r from public.production_receipts where id = p_receipt_id;
+  if not found then
+    return null;
+  end if;
+
+  select count(*), min(t.id) into v_count, v_id
+  from public.warehouse_tasks t
+  where t.process_type = '1020'
+    and t.task_status is distinct from 'A'
+    and t.production_order = r.production_order
+    and t.material_code is not distinct from r.material_code
+    and t.lot is not distinct from r.lot
+    and t.creation_date is not distinct from r.goods_receipt_date
+    and t.confirmation_date is not distinct from r.storage_date
+    and abs(extract(epoch from (t.creation_time - r.goods_receipt_time))) <= 2
+    and abs(extract(epoch from (t.confirmation_time - r.storage_time))) <= 2;
+  if v_count = 1 then
+    return v_id;
+  end if;
+
+  select count(*), min(t.id) into v_count, v_id
+  from public.warehouse_tasks t
+  where t.process_type = '1020'
+    and t.task_status is distinct from 'A'
+    and t.production_order = r.production_order
+    and t.material_code is not distinct from r.material_code
+    and t.lot is not distinct from r.lot
+    and t.quantity = r.quantity;
+  if v_count = 1 then
+    return v_id;
+  end if;
+
+  return null;
+end;
+$$;
+
+create or replace function public.set_receipt_valid(
+  p_receipt_id bigint,
+  p_valid boolean,
+  p_motivo text default null
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_cur boolean;
+  v_ord text;
+  v_doc text;
+  v_reason text;
+  v_task_id bigint;
+begin
+  if public.current_user_role() <> 'admin' and not public.has_permission('orders:reversal') then
+    return 'Seu perfil não tem permissão para estornar recebimentos.';
+  end if;
+
+  select is_valid, production_order, document_number
+    into v_cur, v_ord, v_doc
+  from public.production_receipts where id = p_receipt_id;
+  if v_cur is null then
+    return 'Recebimento não encontrado.';
+  end if;
+
+  v_reason := coalesce(nullif(trim(coalesce(p_motivo,'')),''), 'Estorno manual');
+
+  update public.production_receipts
+  set is_valid = p_valid,
+      reversal_reason = case when p_valid then null else v_reason end,
+      reversed_at = case when p_valid then null else now() end,
+      updated_at = now()
+  where id = p_receipt_id;
+
+  v_task_id := public.resolve_receipt_task(p_receipt_id);
+  if v_task_id is not null then
+    update public.warehouse_tasks
+    set reversal_reason = case when p_valid then null else v_reason end,
+        reversed_at = case when p_valid then null else now() end,
+        updated_at = now()
+    where id = v_task_id;
+  end if;
+
+  insert into public.audit_logs (user_id, action, entity, entity_id, old_value, new_value)
+  values (auth.uid(),
+          case when p_valid then 'reativar_recebimento' else 'estornar_recebimento' end,
+          'production_receipts', p_receipt_id::text,
+          jsonb_build_object('is_valid', v_cur, 'document_number', v_doc, 'production_order', v_ord),
+          jsonb_build_object('is_valid', p_valid, 'reversal_reason', p_motivo, 'uc_task_id', v_task_id));
+  perform public.refresh_order_metrics();
+  return 'ok';
+end;
+$$;
+
+update public.warehouse_tasks
+set reversal_reason = null,
+    reversed_at = null,
+    updated_at = now()
+where process_type = '1020'
+  and reversed_at is not null;
+
+update public.warehouse_tasks t
+set reversal_reason = r.reversal_reason,
+    reversed_at = r.reversed_at,
+    updated_at = now()
+from public.production_receipts r
+where not r.is_valid
+  and t.process_type = '1020'
+  and public.resolve_receipt_task(r.id) = t.id;

@@ -1,0 +1,94 @@
+-- ============================================================
+-- CONVERGE.AI — ajusta a resolução da UC do estorno
+-- ============================================================
+-- A hora de ARMazenagem (confirmação da tarefa = entrada em depósito do
+-- recebimento) é a que sempre coincide entre os arquivos Recebimento e
+-- MON/Puxada UC. A hora de puxada (criação da tarefa = EM) também coincide na
+-- maioria, mas há exceções. Prioridade de resolução:
+--   1) material + lote + horário de armazenagem (tolerância 2s)
+--   2) material + lote + horário de puxada (tolerância 2s)
+--   3) material + lote + quantidade
+-- Sempre exigindo EXATAMENTE uma UC; senão, nenhuma é marcada (nunca replica).
+
+create or replace function public.resolve_receipt_task(p_receipt_id bigint)
+returns bigint
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+declare
+  r record;
+  v_id bigint;
+  v_count bigint;
+begin
+  select * into r from public.production_receipts where id = p_receipt_id;
+  if not found then
+    return null;
+  end if;
+
+  -- 1) material + lote + armazenagem (confirmação = entrada em depósito)
+  select count(*), min(t.id) into v_count, v_id
+  from public.warehouse_tasks t
+  where t.process_type = '1020'
+    and t.task_status is distinct from 'A'
+    and t.production_order = r.production_order
+    and t.material_code is not distinct from r.material_code
+    and t.lot is not distinct from r.lot
+    and t.confirmation_date is not distinct from r.storage_date
+    and abs(extract(epoch from (t.confirmation_time - r.storage_time))) <= 2;
+  if v_count = 1 then
+    return v_id;
+  end if;
+
+  -- 2) material + lote + puxada (criação = EM)
+  select count(*), min(t.id) into v_count, v_id
+  from public.warehouse_tasks t
+  where t.process_type = '1020'
+    and t.task_status is distinct from 'A'
+    and t.production_order = r.production_order
+    and t.material_code is not distinct from r.material_code
+    and t.lot is not distinct from r.lot
+    and t.creation_date is not distinct from r.goods_receipt_date
+    and abs(extract(epoch from (t.creation_time - r.goods_receipt_time))) <= 2;
+  if v_count = 1 then
+    return v_id;
+  end if;
+
+  -- 3) material + lote + quantidade (somente quando resolve para uma única UC)
+  select count(*), min(t.id) into v_count, v_id
+  from public.warehouse_tasks t
+  where t.process_type = '1020'
+    and t.task_status is distinct from 'A'
+    and t.production_order = r.production_order
+    and t.material_code is not distinct from r.material_code
+    and t.lot is not distinct from r.lot
+    and t.quantity = r.quantity;
+  if v_count = 1 then
+    return v_id;
+  end if;
+
+  -- 4) ambíguo ou sem correspondência: não marca nenhuma UC.
+  return null;
+end;
+$$;
+
+-- ============================================================
+-- Reprocessa as marcações existentes com a regra atualizada.
+-- ============================================================
+
+update public.warehouse_tasks
+set reversal_reason = null,
+    reversed_at = null,
+    updated_at = now()
+where process_type = '1020'
+  and reversed_at is not null;
+
+update public.warehouse_tasks t
+set reversal_reason = r.reversal_reason,
+    reversed_at = r.reversed_at,
+    updated_at = now()
+from public.production_receipts r
+where not r.is_valid
+  and t.process_type = '1020'
+  and public.resolve_receipt_task(r.id) = t.id;
