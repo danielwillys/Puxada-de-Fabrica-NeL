@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
+  ArrowRight,
   Boxes,
   CircleDashed,
   Download,
@@ -27,6 +28,8 @@ import {
   YAxis,
 } from "recharts";
 import { FilterBar } from "@/components/filter-bar";
+import { InfoPopover } from "@/components/info-popover";
+import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -57,6 +60,7 @@ import { downloadDashboardPng } from "@/lib/png-export";
 import { sortRows, type SortState } from "@/lib/sort";
 import { SortableTh } from "@/components/sortable-th";
 import { useFilters } from "@/context/filters-context";
+import { cn } from "@/lib/utils";
 import { C, CHART_TOOLTIP, ChartCard, Kpi } from "./shared";
 
 interface DailyPoint {
@@ -141,6 +145,26 @@ export function OperationalDashboard() {
     }
     return { positive, negative };
   }, [reconciliation.data]);
+
+  /** Ordens com divergência SAP × físico (qualquer diferença relevante). */
+  const divergentOrders = useMemo(
+    () =>
+      (metrics.data ?? [])
+        .map((r) => ({
+          order_number: r.order_number,
+          material_code: r.material_code,
+          status: r.status,
+          divergence: r.pulled_quantity - r.sap_supplied_quantity,
+        }))
+        .filter((o) => Math.abs(o.divergence) > 0.001)
+        .sort((a, b) => Math.abs(b.divergence) - Math.abs(a.divergence)),
+    [metrics.data],
+  );
+
+  const openDivergenceAll = () => {
+    setFilters({ ...filters, divergence: "all" });
+    navigate("/ordens");
+  };
 
   const daily = useMemo<DailyPoint[]>(() => {
     const map = new Map<string, DailyPoint>();
@@ -295,7 +319,12 @@ export function OperationalDashboard() {
       <FilterBar filters={filters} onChange={setFilters} showShiftFilters />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Qtd puxada" value={fmtQty(totals.pullQty)} icon={Package} />
+        <Kpi
+          label="Qtd puxada"
+          value={fmtQty(totals.pullQty)}
+          icon={Package}
+          sub={`${fmtInt(totals.pulls)} paletes puxados`}
+        />
         <Kpi
           label="Qtd. armazenada"
           value={fmtQty(totals.storeQty)}
@@ -331,6 +360,67 @@ export function OperationalDashboard() {
           onClick={() => openDivergence("negative")}
         />
       </div>
+
+      <Card className="p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="flex items-center gap-2 text-sm font-semibold">
+            <Scale className="h-4 w-4 text-warning" /> Ordens com divergência
+            <Badge variant="warning">{fmtInt(divergentOrders.length)}</Badge>
+            <InfoPopover
+              title="Ordens com divergência"
+              items={[
+                {
+                  term: "O que é",
+                  definition:
+                    "Ordens em que o puxado físico difere da quantidade fornecida pelo SAP (Físico > SAP ou Físico < SAP). Elas precisam de análise mesmo quando o status aparece como Finalizada.",
+                },
+                {
+                  term: "Como usar",
+                  definition:
+                    "Clique em uma ordem para abrir o detalhe, ou em 'Ver todas no relatório' para listar todas as remessas com divergência no menu Ordens de Produção.",
+                },
+              ]}
+            />
+          </p>
+          <Button variant="outline" size="sm" onClick={openDivergenceAll}>
+            Ver todas no relatório <ArrowRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        {divergentOrders.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Nenhuma ordem com divergência no período.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-1.5 md:grid-cols-2 xl:grid-cols-3">
+            {divergentOrders.slice(0, 9).map((o) => (
+              <Link
+                key={o.order_number}
+                to={`/ordens/${encodeURIComponent(o.order_number)}`}
+                className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm hover:bg-accent"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">{o.order_number}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {o.material_code}
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <StatusBadge status={o.status} />
+                  <span
+                    className={cn(
+                      "font-semibold tabular-nums",
+                      o.divergence > 0 ? "text-warning" : "text-danger",
+                    )}
+                  >
+                    {o.divergence > 0 ? "+" : ""}
+                    {fmtQty(o.divergence)}
+                  </span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Card>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <ChartCard

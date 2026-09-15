@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, FileText, Search, Sheet as SheetIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -84,6 +84,33 @@ const STATUS_LABELS: Record<string, string> = {
   excess: "Excesso",
 };
 
+const ORDERS_UI_KEY = "converge.orders.ui.v1";
+
+/** Recupera busca/página/ordenação da tela de ordens (persistem ao voltar). */
+function loadOrdersUi() {
+  const def = {
+    search: "",
+    page: 1,
+    sortField: "order_number",
+    sortDir: "asc" as const,
+    expand: false,
+  };
+  try {
+    const raw = localStorage.getItem(ORDERS_UI_KEY);
+    if (!raw) return def;
+    const p = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      search: typeof p.search === "string" ? p.search : def.search,
+      page: typeof p.page === "number" && p.page >= 1 ? p.page : def.page,
+      sortField: typeof p.sortField === "string" ? p.sortField : def.sortField,
+      sortDir: p.sortDir === "desc" ? ("desc" as const) : ("asc" as const),
+      expand: Boolean(p.expand),
+    };
+  } catch {
+    return def;
+  }
+}
+
 function cellValue(row: Record<string, unknown>, key: string): string {
   const v = row[key];
   switch (key) {
@@ -113,16 +140,31 @@ function cellValue(row: Record<string, unknown>, key: string): string {
 export function OrdersPage() {
   const navigate = useNavigate();
   const { filters, debounced, setFilters } = useFilters();
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const [initialUi] = useState(loadOrdersUi);
+  const [search, setSearch] = useState(initialUi.search);
+  const [debouncedSearch, setDebouncedSearch] = useState(initialUi.search);
+  const [page, setPage] = useState(initialUi.page);
   const [pageSize] = useState(20);
-  const [sortField, setSortField] = useState("order_number");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [sortField, setSortField] = useState(initialUi.sortField);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(initialUi.sortDir);
   /** Inclui Pallets/UC e Entradas físicas (Recebimento) no relatório exportado. */
-  const [expand, setExpand] = useState(false);
+  const [expand, setExpand] = useState(initialUi.expand);
 
+  // Persiste o estado da tela para que busca/página/ordenação voltem como estavam.
   useEffect(() => {
+    localStorage.setItem(
+      ORDERS_UI_KEY,
+      JSON.stringify({ search, page, sortField, sortDir, expand }),
+    );
+  }, [search, page, sortField, sortDir, expand]);
+
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      setDebouncedSearch(search);
+      return;
+    }
     const t = setTimeout(() => {
       setDebouncedSearch(search);
       setPage(1);
@@ -141,6 +183,15 @@ export function OrdersPage() {
   const exportQuery = useOrdersExport(debounced, debouncedSearch);
 
   const totalPages = Math.max(1, Math.ceil((orders.data?.count ?? 0) / pageSize));
+
+  // Corrige a página restaurada caso a filtragem reduza o total de páginas.
+  useEffect(() => {
+    const count = orders.data?.count;
+    if (typeof count === "number" && count > 0) {
+      const max = Math.max(1, Math.ceil(count / pageSize));
+      if (page > max) setPage(max);
+    }
+  }, [orders.data, page, pageSize]);
 
   const toggleSort = (key: string) => {
     if (sortField === key) {
@@ -337,6 +388,7 @@ export function OrdersPage() {
                       const d = row.pulled_quantity - row.sap_supplied_quantity;
                       if (filters.divergence === "positive") return d > 0.001;
                       if (filters.divergence === "negative") return d < -0.001;
+                      if (filters.divergence === "all") return Math.abs(d) > 0.001;
                       return Math.abs(d) <= 0.001;
                     })
                     .map((row) => (
@@ -417,6 +469,7 @@ export function OrdersPage() {
                     const d = row.pulled_quantity - row.sap_supplied_quantity;
                     if (filters.divergence === "positive") return d > 0.001;
                     if (filters.divergence === "negative") return d < -0.001;
+                    if (filters.divergence === "all") return Math.abs(d) > 0.001;
                     return Math.abs(d) <= 0.001;
                   }).length === 0 ? (
                     <TableRow>
