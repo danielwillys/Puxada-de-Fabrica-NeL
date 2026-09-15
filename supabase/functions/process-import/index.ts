@@ -7,7 +7,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-api-key",
 };
 
 const FILE_TYPES = ["cooispi", "recebimento", "mon"] as const;
@@ -292,6 +292,141 @@ const BUILDERS: Record<FileType, (r: ImportRow) => Record<string, unknown>> = {
   mon: buildMon,
 };
 
+// ---------- cabeçalhos do SAP (robô) ----------
+// O robô envia as linhas com os cabeçalhos originais do SAP. A normalização
+// (cabeçalho → campo) acontece aqui, espelhando a importação manual.
+const COLUMN_MAPS: Record<FileType, Record<string, string>> = {
+  cooispi: {
+    "Ordem": "order_number",
+    "Material": "material_code",
+    "Texto breve material": "material_description",
+    "Quantidade da ordem (GMEIN)": "planned_quantity",
+    "Quantidade boa confirmada (GMEIN)": "confirmed_quantity",
+    "Qtd.fornecida (GMEIN)": "sap_supplied_quantity",
+    "Unidade de medida (=GMEIN)": "unit",
+    "Lote": "lot",
+    "Data início real": "actual_start",
+    "Data real do fim": "actual_end",
+    "Data-base iníc.": "planned_start",
+    "Data de entrada": "created_date",
+  },
+  recebimento: {
+    "Documento": "document_number",
+    "Ordem de produção": "production_order",
+    "Produto": "material_code",
+    "Descrição breve do produto": "material_description",
+    "Quantidade": "quantity",
+    "Lote": "lot",
+    "Status da entrada de mercadorias": "goods_receipt_status",
+    "Status da entrada em depósito": "warehouse_entry_status",
+    "Data real da entrada de mercadorias": "goods_receipt_date",
+    "Hora da EM (real)": "goods_receipt_time",
+    "Tipo proc.depósito": "process_type",
+    "Data real de entrada em depósito": "storage_date",
+    "Hora real entrada em depósito": "storage_time",
+    "Unidade de medida": "unit",
+  },
+  mon: {
+    "Tarefa de depósito": "warehouse_task",
+    "Documento": "document",
+    "Ordem de produção": "production_order",
+    "UC de origem": "source_uc",
+    "Produto": "material_code",
+    "Descrição breve do produto": "material_description",
+    "Lote": "lot",
+    "Qtd.prev.origem UMB": "quantity",
+    "UM básica": "unit",
+    "Tipo proc.depósito": "process_type",
+    "Status da tarefa de depósito": "task_status",
+    "Data da entrada de mercadorias": "goods_receipt_date",
+    "Autor": "author",
+    "Data de criação": "creation_date",
+    "Hora da criação": "creation_time",
+    "Confirmado por": "confirmed_by",
+    "Data da confirmação": "confirmation_date",
+    "Hora da confirmação": "confirmation_time",
+  },
+};
+
+const FIELD_ALIASES: Record<string, string[]> = {
+  storage_date: [
+    "data real de entrada em deposito",
+    "data real entrada em deposito",
+    "data real da entrada em deposito",
+    "data de entrada em deposito",
+    "data da entrada em deposito",
+  ],
+  storage_time: [
+    "hora real entrada em deposito",
+    "hora real de entrada em deposito",
+    "hora real da entrada em deposito",
+    "hora de entrada em deposito",
+    "hora da entrada em deposito",
+    "hora real entrada deposito",
+  ],
+  goods_receipt_date: [
+    "data real da entrada de mercadorias",
+    "data real de entrada de mercadorias",
+    "data da entrada de mercadorias",
+  ],
+  goods_receipt_time: [
+    "hora da em real",
+    "hora real da em",
+    "hora real da entrada de mercadorias",
+    "hora da entrada de mercadorias",
+  ],
+  creation_date: ["data de criacao", "data criacao"],
+  creation_time: ["hora da criacao", "hora criacao", "hora de criacao"],
+  confirmation_date: ["data da confirmacao", "data de confirmacao", "data confirmacao"],
+  confirmation_time: ["hora da confirmacao", "hora de confirmacao", "hora confirmacao"],
+};
+
+const normalizeHeader = (value: string): string =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+function buildHeaderLookup(type: FileType): Map<string, string> {
+  const lookup = new Map<string, string>();
+  const fields = new Set<string>();
+  for (const [header, field] of Object.entries(COLUMN_MAPS[type])) {
+    lookup.set(normalizeHeader(header), field);
+    fields.add(field);
+  }
+  for (const field of fields) {
+    for (const alias of FIELD_ALIASES[field] ?? []) {
+      if (!lookup.has(alias)) lookup.set(alias, field);
+    }
+  }
+  return lookup;
+}
+
+/** Linhas com cabeçalhos originais do SAP → payload normalizado. */
+function normalizeRawRows(rows: ImportRow[], type: FileType): ImportRow[] {
+  const lookup = buildHeaderLookup(type);
+  return rows.map((raw) => {
+    const out: ImportRow = {};
+    for (const [header, value] of Object.entries(raw)) {
+      const field = lookup.get(normalizeHeader(header));
+      if (!field) continue;
+      out[field] = value;
+    }
+    return out;
+  });
+}
+
+/** SHA-256 em hexadecimal (mesmo algoritmo usado ao gerar a chave). */
+async function sha256Hex(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 const MAX_ERRORS = 1000;
 
 Deno.serve(async (req) => {
@@ -305,46 +440,70 @@ Deno.serve(async (req) => {
   );
 
   try {
-    const auth = req.headers.get("Authorization") ?? "";
-    const jwt = auth.replace(/^Bearer\s+/i, "").trim();
-    if (!jwt) {
-      return json(corsHeaders, { ok: false, error: "Não autenticado" }, 401);
-    }
+    // Duas formas de autenticação:
+    // 1) JWT do usuário logado (importação manual pela tela);
+    // 2) x-api-key: chave de integração do robô SAP (carga automática).
+    const apiKey = req.headers.get("x-api-key")?.trim() ?? "";
+    let userId: string | null = null;
+    let tokenId: number | null = null;
+    let tokenName: string | null = null;
 
-    const { data: userData, error: userError } = await supabase.auth.getUser(jwt);
-    if (userError || !userData?.user) {
-      return json(corsHeaders, { ok: false, error: "Sessão inválida" }, 401);
-    }
-    const user = userData.user;
+    if (apiKey) {
+      const hash = await sha256Hex(apiKey);
+      const { data: tokenRow } = await supabase
+        .from("ingestion_tokens")
+        .select("id,name,active")
+        .eq("token_hash", hash)
+        .maybeSingle();
+      if (!tokenRow || !tokenRow.active) {
+        console.error("process-import: chave de integração inválida ou inativa");
+        return json(corsHeaders, { ok: false, error: "Chave de integração inválida ou inativa." }, 401);
+      }
+      tokenId = tokenRow.id as number;
+      tokenName = tokenRow.name as string;
+    } else {
+      const auth = req.headers.get("Authorization") ?? "";
+      const jwt = auth.replace(/^Bearer\s+/i, "").trim();
+      if (!jwt) {
+        return json(corsHeaders, { ok: false, error: "Não autenticado" }, 401);
+      }
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role, role_id, user_roles(permissions)")
-      .eq("id", user.id)
-      .maybeSingle();
-    const profileRow = profile as
-      | {
-          role: string;
-          role_id: number | null;
-          user_roles?: { permissions?: unknown } | null;
-        }
-      | null;
-    const perms = Array.isArray(profileRow?.user_roles?.permissions)
-      ? (profileRow.user_roles.permissions as unknown[]).filter(
-          (p): p is string => typeof p === "string",
-        )
-      : [];
-    // Libera a importação para quem tem a permissão "import" no painel
-    // (Perfis e Permissões), não apenas para administradores.
-    if (profileRow?.role !== "admin" && !perms.includes("import")) {
-      return json(corsHeaders, { ok: false, error: "Seu perfil não tem permissão para importar dados." }, 403);
+      const { data: userData, error: userError } = await supabase.auth.getUser(jwt);
+      if (userError || !userData?.user) {
+        return json(corsHeaders, { ok: false, error: "Sessão inválida" }, 401);
+      }
+      const user = userData.user;
+      userId = user.id;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, role_id, user_roles(permissions)")
+        .eq("id", user.id)
+        .maybeSingle();
+      const profileRow = profile as
+        | {
+            role: string;
+            role_id: number | null;
+            user_roles?: { permissions?: unknown } | null;
+          }
+        | null;
+      const perms = Array.isArray(profileRow?.user_roles?.permissions)
+        ? (profileRow.user_roles.permissions as unknown[]).filter(
+            (p): p is string => typeof p === "string",
+          )
+        : [];
+      // Libera a importação para quem tem a permissão "import" no painel
+      // (Perfis e Permissões), não apenas para administradores.
+      if (profileRow?.role !== "admin" && !perms.includes("import")) {
+        return json(corsHeaders, { ok: false, error: "Seu perfil não tem permissão para importar dados." }, 403);
+      }
     }
 
     const body = await req.json().catch(() => null);
     if (!body) return json(corsHeaders, { ok: false, error: "Corpo inválido" }, 400);
     const fileType = body.file_type as FileType;
     const fileName = typeof body.file_name === "string" ? body.file_name : "importacao.xlsx";
-    const rows: ImportRow[] = Array.isArray(body.rows) ? body.rows : [];
+    let rows: ImportRow[] = Array.isArray(body.rows) ? body.rows : [];
 
     if (!FILE_TYPES.includes(fileType)) {
       return json(corsHeaders, { ok: false, error: "Tipo de arquivo inválido" }, 400);
@@ -353,15 +512,22 @@ Deno.serve(async (req) => {
       return json(corsHeaders, { ok: false, error: "Nenhuma linha para importar" }, 400);
     }
 
+    // O robô envia os cabeçalhos originais do SAP (raw_headers = true); a tela
+    // já manda os campos normalizados.
+    if (body.raw_headers === true) {
+      rows = normalizeRawRows(rows, fileType);
+    }
+
     // Create import history row
     const { data: imp, error: impErr } = await supabase
       .from("imports")
       .insert({
         file_name: fileName,
         file_type: fileType,
-        imported_by: user.id,
+        imported_by: userId,
         total_records: rows.length,
         status: "processing",
+        source: tokenId !== null ? "auto" : "manual",
       })
       .select("id")
       .single();
@@ -502,8 +668,8 @@ Deno.serve(async (req) => {
     if (updImpErr) throw new Error(`Falha ao finalizar importação: ${updImpErr.message}`);
 
     await supabase.from("audit_logs").insert({
-      user_id: user.id,
-      action: "import",
+      user_id: userId,
+      action: tokenId !== null ? "import_auto" : "import",
       entity: "imports",
       entity_id: String(importId),
       new_value: {
@@ -513,8 +679,29 @@ Deno.serve(async (req) => {
         inserted,
         updated,
         rejected,
+        ...(tokenName ? { robo: tokenName } : {}),
       },
     });
+
+    // Marca o uso da chave do robô (última execução e contador).
+    if (tokenId !== null) {
+      const { data: cur } = await supabase
+        .from("ingestion_tokens")
+        .select("use_count")
+        .eq("id", tokenId)
+        .maybeSingle();
+      await supabase
+        .from("ingestion_tokens")
+        .update({
+          last_used_at: new Date().toISOString(),
+          last_used_type: fileType,
+          use_count: ((cur?.use_count as number) ?? 0) + 1,
+        })
+        .eq("id", tokenId);
+      console.log(
+        `process-import: carga automática '${tokenName}' (${fileType}) — ${inserted} inseridas, ${updated} atualizadas, ${rejected} rejeitadas`,
+      );
+    }
 
     return json(corsHeaders, {
       ok: true,
