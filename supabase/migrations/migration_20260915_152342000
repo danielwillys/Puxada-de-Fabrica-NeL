@@ -1,0 +1,5 @@
+alter table public.warehouse_tasks
+  add column if not exists pd_destino text;
+
+comment on column public.warehouse_tasks.pd_destino is
+  'PD destino do palete — coluna "PD destino" do relatório MON (Puxada UC).';

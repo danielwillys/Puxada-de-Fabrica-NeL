@@ -282,6 +282,7 @@ const buildMon = (r: ImportRow) => {
     confirmed_by: normText(r.confirmed_by),
     confirmation_date: parseDate(r.confirmation_date),
     confirmation_time: parseTime(r.confirmation_time),
+    pd_destino: normText(r.pd_destino),
     dedup_key: task,
   };
 };
@@ -345,6 +346,7 @@ const COLUMN_MAPS: Record<FileType, Record<string, string>> = {
     "Confirmado por": "confirmed_by",
     "Data da confirmação": "confirmation_date",
     "Hora da confirmação": "confirmation_time",
+    "PD destino": "pd_destino",
   },
 };
 
