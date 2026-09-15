@@ -131,6 +131,8 @@ export interface WarehouseTask {
   /** Estorno feito pelo painel (Estornar recebimento) vinculado à UC. */
   reversal_reason: string | null;
   reversed_at: string | null;
+  /** PD destino do palete (coluna do relatório MON / Puxada UC). */
+  pd_destino: string | null;
 }
 
 export interface SapReconciliation {

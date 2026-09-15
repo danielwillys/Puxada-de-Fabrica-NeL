@@ -53,6 +53,7 @@ export const COLUMN_MAPS: Record<ImportType, Record<string, string>> = {
     "Confirmado por": "confirmed_by",
     "Data da confirmação": "confirmation_date",
     "Hora da confirmação": "confirmation_time",
+    "PD destino": "pd_destino",
   },
 };
 

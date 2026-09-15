@@ -3860,6 +3860,7 @@ export type Database = {
           material_description: string | null
           operational_pull_day: string | null
           operational_storage_day: string | null
+          pd_destino: string | null
           process_type: string
           production_order: string | null
           pull_operator_id: number | null
@@ -3892,6 +3893,7 @@ export type Database = {
           material_description?: string | null
           operational_pull_day?: string | null
           operational_storage_day?: string | null
+          pd_destino?: string | null
           process_type: string
           production_order?: string | null
           pull_operator_id?: number | null
@@ -3924,6 +3926,7 @@ export type Database = {
           material_description?: string | null
           operational_pull_day?: string | null
           operational_storage_day?: string | null
+          pd_destino?: string | null
           process_type?: string
           production_order?: string | null
           pull_operator_id?: number | null

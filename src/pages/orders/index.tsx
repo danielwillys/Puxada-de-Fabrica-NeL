@@ -200,6 +200,7 @@ export function OrdersPage() {
           Material: t.material_code ?? "",
           Descrição: t.material_description ?? "",
           Lote: t.lot ?? "",
+          "PD destino": t.pd_destino ?? "",
           Quantidade: t.quantity,
           UM: t.unit ?? "",
           Status: t.reversed_at

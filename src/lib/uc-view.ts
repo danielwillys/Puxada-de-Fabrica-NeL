@@ -19,6 +19,7 @@ export interface UcViewRow {
   material: string | null;
   description: string | null;
   lot: string | null;
+  pdDestino: string | null;
   quantity: number;
   unit: string | null;
   status: string | null;
@@ -76,6 +77,7 @@ export function buildUcView(tasks: WarehouseTask[]): UcViewRow[] {
       material: t.material_code,
       description: t.material_description,
       lot: t.lot,
+      pdDestino: t.pd_destino,
       quantity: t.quantity,
       unit: t.unit,
       status: t.task_status,

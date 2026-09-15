@@ -204,6 +204,7 @@ export function OrderDetail() {
       Material: r.material ?? "",
       Descrição: r.description ?? "",
       Lote: r.lot ?? "",
+      "PD destino": r.pdDestino ?? "",
       Quantidade: r.quantity,
       UM: r.unit ?? "",
       Status: r.panelReversed
@@ -426,6 +427,7 @@ export function OrderDetail() {
                   <TableHead>Documento</TableHead>
                   <TableHead>Material</TableHead>
                   <TableHead>Lote</TableHead>
+                  <TableHead>PD destino</TableHead>
                   <TableHead className="text-right">Qtd.</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Puxada</TableHead>
@@ -440,6 +442,7 @@ export function OrderDetail() {
                     <TableCell>{r.document ?? "—"}</TableCell>
                     <TableCell>{r.material ?? "—"}</TableCell>
                     <TableCell>{r.lot ?? "—"}</TableCell>
+                    <TableCell>{r.pdDestino ?? "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{fmtQty(r.quantity)}</TableCell>
                     <TableCell>
                       {r.panelReversed ? (
@@ -475,7 +478,7 @@ export function OrderDetail() {
                 ))}
                 {ucRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
                       Nenhuma UC confirmada à armazenagem para esta ordem.
                     </TableCell>
                   </TableRow>
