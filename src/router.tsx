@@ -1,8 +1,7 @@
 import { Navigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/app-layout";
 import { LoginPage } from "@/pages/auth/login";
-import { ManagerialDashboard } from "@/pages/dashboard/gerencial";
-import { OperationalDashboard } from "@/pages/dashboard/operacional";
+import { DashboardPage } from "@/pages/dashboard";
 import { OrdersPage } from "@/pages/orders";
 import { OrderDetail } from "@/pages/orders/detail";
 import { ImportPage } from "@/pages/import";
@@ -41,12 +40,13 @@ export const routers = [
       {
         path: "dashboard",
         name: "dashboard",
-        element: <ManagerialDashboard />,
+        element: <DashboardPage />,
       },
       {
+        // Rota antiga: mantida para links já salvos; abre a aba operacional.
         path: "dashboard/operacional",
         name: "dashboard-operacional",
-        element: <OperationalDashboard />,
+        element: <Navigate to="/dashboard?tab=operacional" replace />,
       },
       {
         path: "ordens",

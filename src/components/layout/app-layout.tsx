@@ -16,7 +16,6 @@ import {
   UserRoundCog,
   Users,
   UsersRound,
-  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
@@ -43,8 +42,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard Gerencial", icon: LayoutDashboard, permission: "dashboard", exact: true },
-  { to: "/dashboard/operacional", label: "Dashboard Operacional", icon: Workflow, permission: "dashboard" },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: "dashboard", exact: true },
   { to: "/ordens", label: "Ordens de Produção", icon: ClipboardList, permission: "orders" },
   { to: "/performance", label: "Performance", icon: Gauge, permission: "performance" },
   { to: "/importacao", label: "Importação de Dados", icon: FileUp, permission: "import" },
