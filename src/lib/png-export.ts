@@ -40,22 +40,13 @@ export function downloadChartPng(
   const svg = container.querySelector("svg");
   if (!svg) return;
 
-  // Tamanho real do conteúdo do gráfico (inclui rótulos que ficam acima).
-  let bW = svg.clientWidth || 900;
-  let bH = svg.clientHeight || 300;
-  let vx = 0;
-  let vy = 0;
-  try {
-    const bbox = svg.getBBox();
-    if (bbox && bbox.width > 0 && bbox.height > 0) {
-      vx = bbox.x;
-      vy = bbox.y;
-      bW = Math.ceil(bbox.width);
-      bH = Math.ceil(bbox.height);
-    }
-  } catch {
-    // usa clientWidth/clientHeight
-  }
+  // Tamanho renderizado do gráfico: usa os atributos width/height que o recharts
+  // grava no SVG (sem getBBox — que em alguns navegadores retorna medidas
+  // inconsistentes e colapsa a imagem).
+  const chartW =
+    Math.round(parseFloat(svg.getAttribute("width") ?? "") || svg.clientWidth || 900) || 900;
+  const chartH =
+    Math.round(parseFloat(svg.getAttribute("height") ?? "") || svg.clientHeight || 300) || 300;
 
   // Clona para não mutar a árvore viva e resolve variáveis CSS
   // (hsl(var(--border)) etc.) para valores concretos — o SVG exportado não
@@ -74,15 +65,12 @@ export function downloadChartPng(
     for (const child of Array.from(el.children)) fixElement(child);
   };
   fixElement(clone);
+  // overflow visível: rótulos de valor acima da área do gráfico não são
+  // cortados quando o SVG é rasterizado.
   clone.setAttribute(
     "style",
-    `font-family: ${getComputedStyle(document.body).fontFamily};`,
+    `font-family: ${getComputedStyle(document.body).fontFamily}; overflow: visible;`,
   );
-  if (bW > 0 && bH > 0) {
-    clone.setAttribute("viewBox", `${vx} ${vy} ${bW} ${bH}`);
-    clone.setAttribute("width", String(bW));
-    clone.setAttribute("height", String(bH));
-  }
 
   const source = new XMLSerializer().serializeToString(clone);
   const url = URL.createObjectURL(
@@ -93,12 +81,12 @@ export function downloadChartPng(
   img.onload = () => {
     const scale = 2;
     const pad = 24;
+    // Margem extra no topo: espaço para os rótulos de valor sobre as barras.
+    const topPad = 28;
     const legendItems = options.legend ?? [];
     const titleH = 24;
     const subH = options.sub ? 18 : 0;
 
-    const chartW = bW;
-    const chartH = bH;
     const W = chartW + pad * 2;
 
     // Mede a legenda (pode quebrar em várias linhas) e calcula a altura final.
@@ -122,7 +110,7 @@ export function downloadChartPng(
       legendH = legendRows * 22 + 6;
     }
 
-    const H = pad + titleH + subH + chartH + legendH + pad;
+    const H = pad + titleH + subH + topPad + chartH + legendH + pad;
 
     canvas.width = W * scale;
     canvas.height = H * scale;
@@ -148,8 +136,8 @@ export function downloadChartPng(
       y += subH;
     }
 
-    ctx.drawImage(img, pad, y, chartW, chartH);
-    y += chartH;
+    ctx.drawImage(img, pad, y + topPad, chartW, chartH);
+    y += topPad + chartH;
 
     if (legendItems.length > 0) {
       ctx.fillStyle = "#334155";
