@@ -3553,6 +3553,39 @@ export type Database = {
         }
         Relationships: []
       }
+      order_timeline: {
+        Row: {
+          action: string
+          created_at: string
+          description: string | null
+          id: number
+          order_number: string
+          quantity: number | null
+          user_id: string | null
+          user_name: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          description?: string | null
+          id?: number
+          order_number: string
+          quantity?: number | null
+          user_id?: string | null
+          user_name?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          description?: string | null
+          id?: number
+          order_number?: string
+          quantity?: number | null
+          user_id?: string | null
+          user_name?: string | null
+        }
+        Relationships: []
+      }
       production_orders: {
         Row: {
           actual_end: string | null
@@ -3565,6 +3598,7 @@ export type Database = {
           material_code: string
           material_description: string | null
           normalized_at: string | null
+          normalized_quantity: number | null
           normalized_reason: string | null
           normalized_saldo: boolean
           order_number: string
@@ -3587,6 +3621,7 @@ export type Database = {
           material_code: string
           material_description?: string | null
           normalized_at?: string | null
+          normalized_quantity?: number | null
           normalized_reason?: string | null
           normalized_saldo?: boolean
           order_number: string
@@ -3609,6 +3644,7 @@ export type Database = {
           material_code?: string
           material_description?: string | null
           normalized_at?: string | null
+          normalized_quantity?: number | null
           normalized_reason?: string | null
           normalized_saldo?: boolean
           order_number?: string
@@ -4111,7 +4147,13 @@ export type Database = {
         Returns: undefined
       }
       normalize_order_saldo: {
-        Args: { p_order_number: string; p_reason?: string }
+        Args:
+          | {
+              p_observation?: string
+              p_order_number: string
+              p_quantity?: number
+            }
+          | { p_order_number: string; p_reason?: string }
         Returns: string
       }
       refresh_order_metrics: {
@@ -4127,7 +4169,14 @@ export type Database = {
         Returns: number
       }
       set_receipt_valid: {
-        Args: { p_motivo?: string; p_receipt_id: number; p_valid: boolean }
+        Args:
+          | {
+              p_estorno_document?: string
+              p_motivo?: string
+              p_receipt_id: number
+              p_valid: boolean
+            }
+          | { p_motivo?: string; p_receipt_id: number; p_valid: boolean }
         Returns: string
       }
     }

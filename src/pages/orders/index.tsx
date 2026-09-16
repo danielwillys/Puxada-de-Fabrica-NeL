@@ -84,6 +84,56 @@ const STATUS_LABELS: Record<string, string> = {
   excess: "Excesso",
 };
 
+/** Uma ordem normalizada deixa de ter divergência a tratar. */
+function isDivergentRow(
+  row: { normalized_saldo?: boolean | null; balance_quantity: number; excess_quantity: number; pulled_quantity: number; sap_supplied_quantity: number },
+  type: string,
+): boolean {
+  if (row.normalized_saldo) return false;
+  const saldo = row.balance_quantity;
+  const excesso = row.excess_quantity;
+  const sap = Math.abs(row.pulled_quantity - row.sap_supplied_quantity);
+  switch (type) {
+    case "falta":
+      return saldo > 0.001;
+    case "excesso":
+      return excesso > 0.001;
+    case "sap":
+      return sap > 0.001;
+    case "all":
+    default:
+      return saldo > 0.001 || excesso > 0.001 || sap > 0.001;
+  }
+}
+
+/** Filtro de status/divergência aplicado sobre as linhas carregadas. */
+function passesStatusFilter(
+  row: {
+    status: string;
+    normalized_saldo?: boolean | null;
+    balance_quantity: number;
+    excess_quantity: number;
+    pulled_quantity: number;
+    sap_supplied_quantity: number;
+  },
+  f: { status: string; divergence: string; divergenceType: string },
+): boolean {
+  if (f.status) {
+    if (f.status === "divergence") return isDivergentRow(row, f.divergenceType || "all");
+    return row.status === f.status;
+  }
+  if (f.divergence) {
+    const d = row.normalized_saldo
+      ? 0
+      : row.pulled_quantity - row.sap_supplied_quantity;
+    if (f.divergence === "positive") return d > 0.001;
+    if (f.divergence === "negative") return d < -0.001;
+    if (f.divergence === "all") return Math.abs(d) > 0.001;
+    if (f.divergence === "ok") return Math.abs(d) <= 0.001;
+  }
+  return true;
+}
+
 const ORDERS_UI_KEY = "converge.orders.ui.v1";
 
 /** Recupera busca/página/ordenação da tela de ordens (persistem ao voltar). */
@@ -383,14 +433,19 @@ export function OrdersPage() {
                 </TableHeader>
                 <TableBody>
                   {(orders.data?.rows ?? [])
-                    .filter((row) => {
-                      if (!filters.divergence) return true;
-                      const d = row.pulled_quantity - row.sap_supplied_quantity;
-                      if (filters.divergence === "positive") return d > 0.001;
-                      if (filters.divergence === "negative") return d < -0.001;
-                      if (filters.divergence === "all") return Math.abs(d) > 0.001;
-                      return Math.abs(d) <= 0.001;
-                    })
+                    .filter((row) =>
+                      passesStatusFilter(
+                        row as unknown as {
+                          status: string;
+                          normalized_saldo?: boolean | null;
+                          balance_quantity: number;
+                          excess_quantity: number;
+                          pulled_quantity: number;
+                          sap_supplied_quantity: number;
+                        },
+                        filters,
+                      ),
+                    )
                     .map((row) => (
                     <TableRow
                       key={row.id}
@@ -463,21 +518,28 @@ export function OrdersPage() {
                       </TableCell>
                     </TableRow>
                   ) : null}
-                  {filters.divergence &&
-                  (orders.data?.rows ?? []).length > 0 &&
-                  (orders.data?.rows ?? []).filter((row) => {
-                    const d = row.pulled_quantity - row.sap_supplied_quantity;
-                    if (filters.divergence === "positive") return d > 0.001;
-                    if (filters.divergence === "negative") return d < -0.001;
-                    if (filters.divergence === "all") return Math.abs(d) > 0.001;
-                    return Math.abs(d) <= 0.001;
-                  }).length === 0 ? (
+                  {filters.status === "divergence" ||
+                  (filters.divergence &&
+                    (orders.data?.rows ?? []).length > 0) ? (
+                  (orders.data?.rows ?? []).filter((row) =>
+                    passesStatusFilter(
+                      row as unknown as {
+                        status: string;
+                        normalized_saldo?: boolean | null;
+                        balance_quantity: number;
+                        excess_quantity: number;
+                        pulled_quantity: number;
+                        sap_supplied_quantity: number;
+                      },
+                      filters,
+                    ),
+                  ).length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={COLUMNS.length} className="py-10 text-center text-muted-foreground">
                         Nenhuma ordem com essa divergência no período selecionado.
                       </TableCell>
                     </TableRow>
-                  ) : null}
+                  ) : null) : null}
                 </TableBody>
               </Table>
             </div>

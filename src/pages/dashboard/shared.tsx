@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 /** Paleta N&L usada nos gráficos (vermelho, verde e amarelo de status do BI). */
 export const C = {
   primary: "#CE1E29",
-  success: "#44CE55",
+  success: "#005CA8",
   warning: "#E1C333",
   danger: "#A22E2E",
   muted: "#94a3b8",

@@ -10,6 +10,7 @@ import {
   Factory,
   FileText,
   Flag,
+  History,
   Hourglass,
   Loader2,
   Package,
@@ -35,6 +36,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -62,7 +65,7 @@ import { exportCsv, exportExcel } from "@/lib/excel";
 import { buildUcView } from "@/lib/uc-view";
 import { sortRows, type SortState } from "@/lib/sort";
 import { SortableTh } from "@/components/sortable-th";
-import { useOrderMetrics, useOrderReceipts, useOrderTasks } from "@/lib/queries";
+import { useOrderMetrics, useOrderReceipts, useOrderTasks, useOrderTimeline } from "@/lib/queries";
 import type { ProductionReceipt } from "@/lib/types";
 import { TASK_STATUS_META } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -129,30 +132,38 @@ export function OrderDetail() {
   const metrics = useOrderMetrics(orderNumber);
   const receipts = useOrderReceipts(orderNumber);
   const tasks = useOrderTasks(orderNumber);
+  const timeline = useOrderTimeline(orderNumber);
   const qc = useQueryClient();
 
   const [receiptAction, setReceiptAction] = useState<{
     receipt: ProductionReceipt;
     reason: string;
+    estornoDocument: string;
   } | null>(null);
 
   const [normalizeOpen, setNormalizeOpen] = useState(false);
-  const [normalizeReason, setNormalizeReason] = useState("Divergência analisada e aceita");
+  const [normalizeObs, setNormalizeObs] = useState("");
+  const [normalizeQty, setNormalizeQty] = useState("");
 
   const toggleNormalize = useMutation({
     mutationFn: async () => {
       if (!row) return;
+      const qty = normalizeQty.trim() === "" ? null : Number(normalizeQty);
       const { data, error } = await supabase.rpc("normalize_order_saldo", {
         p_order_number: orderNumber,
-        p_reason: normalizeReason,
+        p_observation: normalizeObs,
+        p_quantity: qty,
       });
       if (error) throw error;
       if (data && data !== "ok") throw new Error(String(data));
     },
     onSuccess: () => {
-      toast.success(row?.normalized_saldo ? "Normalização removida." : "Saldo normalizado (divergência aceita).");
+      toast.success(row?.normalized_saldo ? "Normalização removida." : "Saldo normalizado (divergência tratada).");
       setNormalizeOpen(false);
+      setNormalizeObs("");
+      setNormalizeQty("");
       qc.invalidateQueries({ queryKey: ["order-metrics", orderNumber] });
+      qc.invalidateQueries({ queryKey: ["order-timeline", orderNumber] });
       qc.invalidateQueries({ queryKey: ["audit"] });
       qc.invalidateQueries({ queryKey: ["metrics"] });
     },
@@ -165,6 +176,7 @@ export function OrderDetail() {
         p_receipt_id: r.id,
         p_valid: !r.is_valid,
         p_motivo: r.is_valid ? receiptAction?.reason ?? null : null,
+        p_estorno_document: r.is_valid ? receiptAction?.estornoDocument ?? null : null,
       });
       if (error) throw error;
       if (data && data !== "ok") throw new Error(String(data));
@@ -174,6 +186,7 @@ export function OrderDetail() {
       setReceiptAction(null);
       qc.invalidateQueries({ queryKey: ["order-receipts", orderNumber] });
       qc.invalidateQueries({ queryKey: ["order-metrics", orderNumber] });
+      qc.invalidateQueries({ queryKey: ["order-timeline", orderNumber] });
       qc.invalidateQueries({ queryKey: ["audit"] });
     },
     onError: (e) =>
@@ -422,6 +435,49 @@ export function OrderDetail() {
               <TimelineStep key={s.label} {...s} />
             ))}
           </div>
+
+          {(timeline.data ?? []).length > 0 ? (
+            <div className="mt-2 border-t pt-3">
+              <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                <History className="h-4 w-4 text-primary" /> Movimentações
+              </p>
+              <div className="flex max-h-72 flex-col gap-1.5 overflow-auto">
+                {(timeline.data ?? []).map((e) => {
+                  const label =
+                    e.action === "normalizar_saldo"
+                      ? "Normalização de saldo"
+                      : e.action === "remover_normalizacao"
+                        ? "Normalização removida"
+                        : e.action === "estornar_recebimento"
+                          ? "Estorno"
+                          : "Reativação";
+                  const tone =
+                    e.action === "estornar_recebimento"
+                      ? "danger"
+                      : e.action === "reativar_recebimento" || e.action === "normalizar_saldo"
+                        ? "success"
+                        : "warning";
+                  return (
+                    <div key={e.id} className="rounded-md border px-3 py-2 text-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge variant={tone as "danger" | "success" | "warning"}>{label}</Badge>
+                        <span className="whitespace-nowrap text-xs text-muted-foreground">
+                          {fmtDateTime(e.created_at)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {e.description ?? "—"}
+                        {e.quantity != null ? ` · ${fmtQty(e.quantity)} itens` : ""}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        por {e.user_name ?? e.user_id ?? "—"}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
         </Card>
 
         <Card className="p-4">
@@ -578,7 +634,13 @@ export function OrderDetail() {
                         variant={r.is_valid ? "outline" : "ghost"}
                         size="sm"
                         className="h-8"
-                        onClick={() => setReceiptAction({ receipt: r, reason: "Excesso de material" })}
+                        onClick={() =>
+                          setReceiptAction({
+                            receipt: r,
+                            reason: "Excesso de material",
+                            estornoDocument: "",
+                          })
+                        }
                       >
                         {r.is_valid ? (
                           <>
@@ -629,22 +691,37 @@ export function OrderDetail() {
             </DialogDescription>
           </DialogHeader>
           {receiptAction?.receipt.is_valid ? (
-            <div className="flex flex-col gap-1.5">
-              <Label>Motivo do estorno</Label>
-              <Select
-                value={receiptAction.reason}
-                onValueChange={(v) => setReceiptAction({ ...receiptAction, reason: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o motivo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Excesso de material">Excesso de material</SelectItem>
-                  <SelectItem value="Recebimento errado">Recebimento errado</SelectItem>
-                  <SelectItem value="Devolução à produção">Devolução à produção</SelectItem>
-                  <SelectItem value="Divergência de quantidade">Divergência de quantidade</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label>Motivo do estorno</Label>
+                <Select
+                  value={receiptAction.reason}
+                  onValueChange={(v) => setReceiptAction({ ...receiptAction, reason: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o motivo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Excesso de material">Excesso de material</SelectItem>
+                    <SelectItem value="Recebimento errado">Recebimento errado</SelectItem>
+                    <SelectItem value="Devolução à produção">Devolução à produção</SelectItem>
+                    <SelectItem value="Divergência de quantidade">Divergência de quantidade</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Número do documento de estorno (SAP)</Label>
+                <Input
+                  value={receiptAction.estornoDocument}
+                  onChange={(e) =>
+                    setReceiptAction({ ...receiptAction, estornoDocument: e.target.value })
+                  }
+                  placeholder="Ex.: 1000001234"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Obrigatório: fica registrado na linha do tempo da ordem.
+                </p>
+              </div>
             </div>
           ) : null}
           <DialogFooter>
@@ -654,7 +731,11 @@ export function OrderDetail() {
             <Button
               variant={receiptAction?.receipt.is_valid ? "destructive" : "default"}
               onClick={() => receiptAction && toggleReceipt.mutate(receiptAction.receipt)}
-              disabled={toggleReceipt.isPending || !receiptAction?.reason}
+              disabled={
+                toggleReceipt.isPending ||
+                !receiptAction?.reason ||
+                (receiptAction?.receipt.is_valid && !receiptAction.estornoDocument.trim())
+              }
             >
               {toggleReceipt.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -675,30 +756,32 @@ export function OrderDetail() {
           <DialogHeader>
             <DialogTitle>Normalizar saldo da ordem</DialogTitle>
             <DialogDescription>
-              Após a análise da divergência SAP × físico, o sistema passa a{" "}
-              <strong>ignorar o excesso ou a falta de saldo</strong> desta ordem — ela deixa de
-              contar como "Com excesso" ou com saldo pendente. A ação é registrada na auditoria.
+              A divergência tratada <strong>deixa de existir</strong> no sistema: a ordem deixa
+              de contar como "Com excesso", com saldo pendente ou divergência SAP. A
+              movimentação fica registrada na linha do tempo com o usuário que fez.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label>Motivo da normalização</Label>
-            <Select value={normalizeReason} onValueChange={setNormalizeReason}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Divergência analisada e aceita">
-                  Divergência analisada e aceita
-                </SelectItem>
-                <SelectItem value="Excesso devolvido à produção">
-                  Excesso devolvido à produção
-                </SelectItem>
-                <SelectItem value="Falta compensada em outra ordem">
-                  Falta compensada em outra ordem
-                </SelectItem>
-                <SelectItem value="Recebimento corrigido">Recebimento corrigido</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>Observação / Motivo (obrigatório)</Label>
+              <Textarea
+                value={normalizeObs}
+                onChange={(e) => setNormalizeObs(e.target.value)}
+                rows={3}
+                placeholder="Ex.: Saldo SAP maior que o puxado fisicamente — zerando a divergência."
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Quantidade de itens normalizados</Label>
+              <Input
+                type="number"
+                min={0}
+                value={normalizeQty}
+                onChange={(e) => setNormalizeQty(e.target.value)}
+                placeholder="Ex.: 65"
+                className="w-40 tabular-nums"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setNormalizeOpen(false)}>
@@ -706,7 +789,7 @@ export function OrderDetail() {
             </Button>
             <Button
               onClick={() => toggleNormalize.mutate()}
-              disabled={toggleNormalize.isPending}
+              disabled={toggleNormalize.isPending || !normalizeObs.trim()}
             >
               {toggleNormalize.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

@@ -48,7 +48,7 @@ import { fmtDurationMinutes, fmtInt, fmtPercent, fmtQty } from "@/lib/format";
 const C = {
   // Paleta N&L: vermelho vivo, azul marinho, verde e amarelo de status do BI
   primary: "#CE1E29",
-  success: "#44CE55",
+  success: "#005CA8",
   warning: "#E1C333",
   danger: "#A22E2E",
   muted: "#94a3b8",
