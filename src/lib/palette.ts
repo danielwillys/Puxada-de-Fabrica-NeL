@@ -1,10 +1,10 @@
 /** Paleta de cores persistida (system_settings -> chave "color_palette"). */
 export interface ColorPalette {
-  /** Cor principal (botões, links, destaques) — ex.: "#CE1E29" */
+  /** Cor principal (botões, links, destaques) — ex.: "#CE1E29" (N&L) */
   primary: string;
-  /** Acento azul (sidebar/cabeçalhos) — ex.: "#182332" */
+  /** Acento azul (sidebar/cabeçalhos) — ex.: "#102D69" (Flom) */
   accent: string;
-  /** Verde de sucesso — ex.: "#44CE55" */
+  /** Azul de sucesso (marca Flom) — ex.: "#005CA8" */
   success: string;
   /** Amarelo de alerta — ex.: "#E1C333" */
   warning: string;
@@ -14,8 +14,8 @@ export interface ColorPalette {
 
 export const DEFAULT_PALETTE: ColorPalette = {
   primary: "#CE1E29",
-  accent: "#182332",
-  success: "#44CE55",
+  accent: "#102D69",
+  success: "#005CA8",
   warning: "#E1C333",
   danger: "#A22E2E",
 };
@@ -23,7 +23,7 @@ export const DEFAULT_PALETTE: ColorPalette = {
 /** Presets para escolha rápida no painel administrativo. */
 export const PALETTE_PRESETS: { name: string; palette: ColorPalette }[] = [
   {
-    name: "N&L padrão (vermelho + azul marinho)",
+    name: "N&L padrão (vermelho + azul Flom)",
     palette: DEFAULT_PALETTE,
   },
   {
@@ -31,7 +31,7 @@ export const PALETTE_PRESETS: { name: string; palette: ColorPalette }[] = [
     palette: {
       primary: "#D31A27",
       accent: "#2B5A8C",
-      success: "#44CE55",
+      success: "#005CA8",
       warning: "#E1C333",
       danger: "#A22E2E",
     },
@@ -39,9 +39,9 @@ export const PALETTE_PRESETS: { name: string; palette: ColorPalette }[] = [
   {
     name: "Azul corporativo",
     palette: {
-      primary: "#0F245B",
-      accent: "#0F245B",
-      success: "#16a34a",
+      primary: "#102D69",
+      accent: "#102D69",
+      success: "#005CA8",
       warning: "#f59e0b",
       danger: "#dc2626",
     },

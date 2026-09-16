@@ -6,9 +6,9 @@
  * HTML). Por isso compomos o PNG manualmente em um canvas: fundo branco,
  * título, subtítulo, o gráfico e a legenda.
  *
- * Correções de recorte:
- * - rótulos de valor que ficam acima da área do gráfico (getBBox) são incluídos;
- * - a legenda pode quebrar em várias linhas e a altura do canvas acompanha.
+ * Para não cortar nada (rótulos de valor sobre as barras mais altas, eixos,
+ * etc.), o SVG é re-renderizado com um `viewBox` igual ao bounding box real do
+ * conteúdo — assim a imagem final tem exatamente o tamanho do gráfico.
  */
 import { toPng } from "html-to-image";
 
@@ -40,6 +40,23 @@ export function downloadChartPng(
   const svg = container.querySelector("svg");
   if (!svg) return;
 
+  // Tamanho real do conteúdo do gráfico (inclui rótulos que ficam acima).
+  let bW = svg.clientWidth || 900;
+  let bH = svg.clientHeight || 300;
+  let vx = 0;
+  let vy = 0;
+  try {
+    const bbox = svg.getBBox();
+    if (bbox && bbox.width > 0 && bbox.height > 0) {
+      vx = bbox.x;
+      vy = bbox.y;
+      bW = Math.ceil(bbox.width);
+      bH = Math.ceil(bbox.height);
+    }
+  } catch {
+    // usa clientWidth/clientHeight
+  }
+
   // Clona para não mutar a árvore viva e resolve variáveis CSS
   // (hsl(var(--border)) etc.) para valores concretos — o SVG exportado não
   // herda o CSS da página.
@@ -61,6 +78,11 @@ export function downloadChartPng(
     "style",
     `font-family: ${getComputedStyle(document.body).fontFamily};`,
   );
+  if (bW > 0 && bH > 0) {
+    clone.setAttribute("viewBox", `${vx} ${vy} ${bW} ${bH}`);
+    clone.setAttribute("width", String(bW));
+    clone.setAttribute("height", String(bH));
+  }
 
   const source = new XMLSerializer().serializeToString(clone);
   const url = URL.createObjectURL(
@@ -75,21 +97,8 @@ export function downloadChartPng(
     const titleH = 24;
     const subH = options.sub ? 18 : 0;
 
-    const chartW = svg.clientWidth || 900;
-    const chartH = svg.clientHeight || 300;
-
-    // Conteúdo que ultrapassa o topo do SVG (rótulos de valor sobre as barras
-    // mais altas) é incluído no PNG.
-    let topOverflow = 0;
-    try {
-      const bbox = svg.getBBox();
-      if (bbox && Number.isFinite(bbox.y) && bbox.y < 0) {
-        topOverflow = Math.ceil(-bbox.y);
-      }
-    } catch {
-      topOverflow = 0;
-    }
-
+    const chartW = bW;
+    const chartH = bH;
     const W = chartW + pad * 2;
 
     // Mede a legenda (pode quebrar em várias linhas) e calcula a altura final.
@@ -113,7 +122,7 @@ export function downloadChartPng(
       legendH = legendRows * 22 + 6;
     }
 
-    const H = pad + titleH + subH + topOverflow + chartH + legendH + pad;
+    const H = pad + titleH + subH + chartH + legendH + pad;
 
     canvas.width = W * scale;
     canvas.height = H * scale;
@@ -139,9 +148,8 @@ export function downloadChartPng(
       y += subH;
     }
 
-    // Desenha o gráfico deslocado para baixo para incluir o que sobra acima.
-    ctx.drawImage(img, pad, y + topOverflow, chartW, chartH);
-    y += topOverflow + chartH;
+    ctx.drawImage(img, pad, y, chartW, chartH);
+    y += chartH;
 
     if (legendItems.length > 0) {
       ctx.fillStyle = "#334155";

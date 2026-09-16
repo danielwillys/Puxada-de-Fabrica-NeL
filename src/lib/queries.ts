@@ -42,13 +42,16 @@ export interface GlobalFilters {
   orderNumber: string;
   material: string;
   lot: string;
-  status: "" | OrderStatus;
+  /** Status ("divergence" abre o filtro de tipo de divergência). */
+  status: "" | OrderStatus | "divergence";
   /** Id do turno ("" = todos). Usado pelas telas de performance. */
   shiftId: string;
   /** Dia operacional ("" = todos). Usado pelas telas de performance. */
   operationalDay: string;
   /** Divergência SAP × físico ("" = todas, positive, negative, ok, all). */
   divergence: "" | "positive" | "negative" | "ok" | "all";
+  /** Tipo de divergência quando status = "divergence". */
+  divergenceType: "" | "falta" | "excesso" | "sap" | "all";
   /** Somente ordens com tarefa de puxada em aberto (analista). */
   openTasksOnly: boolean;
 }
@@ -64,6 +67,7 @@ export const EMPTY_FILTERS: GlobalFilters = {
   shiftId: "",
   operationalDay: "",
   divergence: "",
+  divergenceType: "",
   openTasksOnly: false,
 };
 
@@ -160,7 +164,8 @@ function applyFilters(q: Builder, f: GlobalFilters): Builder {
   }
   const lot = f.lot.trim();
   if (lot) q = q.ilike("lot", `%${lot}%`);
-  if (f.status) q = q.eq("status", f.status);
+  // "divergence" é um pseudo-status: a filtragem acontece no cliente.
+  if (f.status && f.status !== "divergence") q = q.eq("status", f.status);
   if (f.openTasksOnly) q = q.gt("open_task_count", 0);
   return q;
 }
@@ -369,6 +374,33 @@ export function useOrderTasks(orderNumber: string) {
         .order("creation_date", { ascending: true });
       if (error) throw error;
       return (data ?? []) as unknown as WarehouseTask[];
+    },
+  });
+}
+
+export interface OrderTimelineEntry {
+  id: number;
+  order_number: string;
+  user_id: string | null;
+  user_name: string | null;
+  action: string;
+  description: string | null;
+  quantity: number | null;
+  created_at: string;
+}
+
+export function useOrderTimeline(orderNumber: string) {
+  return useQuery({
+    queryKey: ["order-timeline", orderNumber],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("order_timeline")
+        .select("*")
+        .eq("order_number", orderNumber)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return (data ?? []) as unknown as OrderTimelineEntry[];
     },
   });
 }

@@ -4,7 +4,6 @@ import {
   type GlobalFilters,
   useShifts,
 } from "@/lib/queries";
-import { ORDER_STATUS_OPTIONS } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +27,24 @@ interface FilterBarProps {
   showOpenTasks?: boolean;
 }
 
+const STATUS_OPTIONS: { value: GlobalFilters["status"]; label: string }[] = [
+  { value: "", label: "Todos" },
+  { value: "not_started", label: "Não iniciada" },
+  { value: "in_progress", label: "Em andamento" },
+  { value: "completed", label: "Finalizada" },
+  { value: "divergence", label: "Divergência" },
+];
+
+const DIVERGENCE_TYPE_OPTIONS: {
+  value: GlobalFilters["divergenceType"];
+  label: string;
+}[] = [
+  { value: "all", label: "Qualquer divergência" },
+  { value: "falta", label: "Falta puxar (não puxou todo o saldo)" },
+  { value: "excesso", label: "Excesso (puxou mais que o exigido)" },
+  { value: "sap", label: "Divergência SAP (Físico <> SAP)" },
+];
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex min-w-[130px] flex-col gap-1">
@@ -39,7 +56,13 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-export function FilterBar({ filters, onChange, className, showShiftFilters = false, showOpenTasks = false }: FilterBarProps) {
+export function FilterBar({
+  filters,
+  onChange,
+  className,
+  showShiftFilters = false,
+  showOpenTasks = false,
+}: FilterBarProps) {
   const set = (patch: Partial<GlobalFilters>) => onChange({ ...filters, ...patch });
   const shifts = useShifts();
 
@@ -53,9 +76,7 @@ export function FilterBar({ filters, onChange, className, showShiftFilters = fal
       <Field label="Período">
         <Select
           value={filters.period}
-          onValueChange={(v) =>
-            set({ period: v as GlobalFilters["period"] })
-          }
+          onValueChange={(v) => set({ period: v as GlobalFilters["period"] })}
         >
           <SelectTrigger className="h-9 w-[170px]">
             <SelectValue placeholder="Período" />
@@ -126,33 +147,6 @@ export function FilterBar({ filters, onChange, className, showShiftFilters = fal
         </>
       ) : null}
 
-      <Field label="Ordem">
-        <Input
-          className="h-9 w-[140px]"
-          placeholder="Ex.: 1000123"
-          value={filters.orderNumber}
-          onChange={(e) => set({ orderNumber: e.target.value })}
-        />
-      </Field>
-
-      <Field label="Material">
-        <Input
-          className="h-9 w-[140px]"
-          placeholder="Código ou descrição"
-          value={filters.material}
-          onChange={(e) => set({ material: e.target.value })}
-        />
-      </Field>
-
-      <Field label="Lote">
-        <Input
-          className="h-9 w-[120px]"
-          placeholder="Lote"
-          value={filters.lot}
-          onChange={(e) => set({ lot: e.target.value })}
-        />
-      </Field>
-
       <Field label="Status">
         <Select
           value={filters.status || "todos"}
@@ -164,8 +158,7 @@ export function FilterBar({ filters, onChange, className, showShiftFilters = fal
             <SelectValue placeholder="Todos" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="todos">Todos</SelectItem>
-            {ORDER_STATUS_OPTIONS.map((o) => (
+            {STATUS_OPTIONS.map((o) => (
               <SelectItem key={o.value} value={o.value}>
                 {o.label}
               </SelectItem>
@@ -174,25 +167,27 @@ export function FilterBar({ filters, onChange, className, showShiftFilters = fal
         </Select>
       </Field>
 
-      <Field label="Divergência SAP × físico">
-        <Select
-          value={filters.divergence || "todas"}
-          onValueChange={(v) =>
-            set({ divergence: v === "todas" ? "" : (v as GlobalFilters["divergence"]) })
-          }
-        >
-          <SelectTrigger className="h-9 w-[200px]">
-            <SelectValue placeholder="Todas" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="todas">Todas</SelectItem>
-            <SelectItem value="all">Qualquer divergência</SelectItem>
-            <SelectItem value="ok">OK (físico = SAP)</SelectItem>
-            <SelectItem value="positive">Físico &gt; SAP</SelectItem>
-            <SelectItem value="negative">Físico &lt; SAP</SelectItem>
-          </SelectContent>
-        </Select>
-      </Field>
+      {filters.status === "divergence" ? (
+        <Field label="Tipo de divergência">
+          <Select
+            value={filters.divergenceType || "all"}
+            onValueChange={(v) =>
+              set({ divergenceType: v as GlobalFilters["divergenceType"] })
+            }
+          >
+            <SelectTrigger className="h-9 w-[260px]">
+              <SelectValue placeholder="Qualquer divergência" />
+            </SelectTrigger>
+            <SelectContent>
+              {DIVERGENCE_TYPE_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      ) : null}
 
       {showOpenTasks ? (
         <Field label="Tarefa em aberto">
@@ -223,6 +218,7 @@ export function FilterBar({ filters, onChange, className, showShiftFilters = fal
             shiftId: "",
             operationalDay: "",
             divergence: "",
+            divergenceType: "",
             openTasksOnly: false,
           })
         }
