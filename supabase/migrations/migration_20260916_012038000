@@ -1,0 +1,107 @@
+-- Adiciona a coluna "divergence" à view de métricas para filtrar no servidor.
+drop view if exists public.sap_reconciliation;
+drop view if exists public.production_order_metrics;
+
+create view public.production_order_metrics as
+with basis as (
+  select coalesce((select value from public.system_settings where key = 'pull_completion_basis')::text, 'confirmed') as pull_basis
+),
+order_base as (
+  select
+    po.id, po.order_number, po.material_code, po.material_description,
+    po.unit, po.lot, po.planned_quantity, po.confirmed_quantity,
+    po.sap_supplied_quantity, po.actual_start, po.actual_end,
+    po.planned_start, po.created_date,
+    coalesce(po.normalized_saldo, false) as normalized_saldo,
+    po.normalized_reason, po.normalized_at,
+    case
+      when b.pull_basis = 'planned' then po.planned_quantity
+      when b.pull_basis = 'min' then least(coalesce(po.planned_quantity,0), coalesce(po.confirmed_quantity,0))
+      else coalesce(nullif(coalesce(po.confirmed_quantity,0),0), po.planned_quantity)
+    end as required_quantity
+  from public.production_orders po
+  cross join basis b
+),
+pulled as (
+  select production_order, coalesce(sum(quantity),0) as pulled_quantity
+  from public.production_receipts
+  where is_valid
+  group by production_order
+),
+pull_times as (
+  select production_order,
+    min(case when creation_date is not null and creation_time is not null
+        then (creation_date + creation_time)::timestamp end) as first_pull_at,
+    max(case when creation_date is not null and creation_time is not null
+        then (creation_date + creation_time)::timestamp end) as last_pull_at
+  from public.warehouse_tasks
+  where process_type = '1020' and task_status is distinct from 'A'
+  group by production_order
+),
+open_pulls as (
+  select production_order, count(*) as open_count
+  from public.warehouse_tasks
+  where process_type = '1020'
+    and task_status is distinct from 'A'
+    and coalesce(task_status, '') <> 'C'
+  group by production_order
+)
+select
+  ob.id, ob.order_number, ob.material_code, ob.material_description,
+  ob.unit, ob.lot, ob.planned_quantity, ob.confirmed_quantity,
+  ob.sap_supplied_quantity, ob.required_quantity,
+  coalesce(p.pulled_quantity,0) as pulled_quantity,
+  case when ob.normalized_saldo then 0
+       else greatest(coalesce(ob.required_quantity,0) - coalesce(p.pulled_quantity,0), 0)
+  end as balance_quantity,
+  case when ob.normalized_saldo then 0
+       else greatest(coalesce(p.pulled_quantity,0) - coalesce(ob.required_quantity,0), 0)
+  end as excess_quantity,
+  case when ob.normalized_saldo then 0
+       else round(coalesce(p.pulled_quantity,0) - coalesce(ob.sap_supplied_quantity,0), 3)
+  end as divergence,
+  case
+    when coalesce(ob.required_quantity,0) > 0
+    then least(100, round(coalesce(p.pulled_quantity,0) / ob.required_quantity * 100, 2))
+    else 0
+  end as pull_efficiency_percent,
+  case
+    when ob.normalized_saldo and coalesce(p.pulled_quantity,0) = 0 then 'not_started'
+    when ob.normalized_saldo and coalesce(op.open_count,0) > 0 then 'in_progress'
+    when ob.normalized_saldo then 'completed'
+    when coalesce(p.pulled_quantity,0) = 0 then 'not_started'
+    when coalesce(p.pulled_quantity,0) < coalesce(ob.required_quantity,0) then 'in_progress'
+    when coalesce(p.pulled_quantity,0) > coalesce(ob.required_quantity,0) then 'excess'
+    when coalesce(op.open_count,0) > 0 then 'in_progress'
+    else 'completed'
+  end::public.order_status as status,
+  ob.actual_start, ob.actual_end, ob.planned_start, ob.created_date,
+  pt.first_pull_at, pt.last_pull_at,
+  coalesce(op.open_count,0) as open_task_count,
+  ob.normalized_saldo, ob.normalized_reason, ob.normalized_at
+from order_base ob
+left join pulled p on p.production_order = ob.order_number
+left join pull_times pt on pt.production_order = ob.order_number
+left join open_pulls op on op.production_order = ob.order_number;
+
+create view public.sap_reconciliation as
+select
+  po.id,
+  po.order_number,
+  po.material_code,
+  po.material_description,
+  po.lot,
+  po.unit,
+  po.sap_supplied_quantity as sap_quantity,
+  m.pulled_quantity as physical_quantity,
+  case when po.normalized_saldo then 0
+       else round(coalesce(po.sap_supplied_quantity,0) - coalesce(m.pulled_quantity,0), 3)
+  end as difference_quantity,
+  case
+    when po.normalized_saldo then 'ok'
+    when abs(coalesce(po.sap_supplied_quantity,0) - coalesce(m.pulled_quantity,0)) <= 0.001 then 'ok'
+    when coalesce(m.pulled_quantity,0) > coalesce(po.sap_supplied_quantity,0) then 'positive'
+    else 'negative'
+  end as classification
+from public.production_orders po
+left join public.production_order_metrics m on m.id = po.id;
