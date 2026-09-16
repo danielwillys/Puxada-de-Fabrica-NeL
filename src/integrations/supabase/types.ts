@@ -4066,6 +4066,7 @@ export type Database = {
           balance_quantity: number | null
           confirmed_quantity: number | null
           created_date: string | null
+          divergence: number | null
           excess_quantity: number | null
           first_pull_at: string | null
           id: number | null
