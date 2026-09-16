@@ -1,0 +1,169 @@
+create table if not exists public.order_timeline (
+  id bigserial primary key,
+  order_number text not null,
+  user_id uuid references auth.users(id),
+  user_name text,
+  action text not null,
+  description text,
+  quantity numeric(18,3),
+  created_at timestamptz not null default now()
+);
+alter table public.order_timeline enable row level security;
+create policy "order_timeline_select" on public.order_timeline for select
+  using (public.current_user_role() in ('admin','manager','operator'));
+create index if not exists idx_order_timeline_order on public.order_timeline(order_number, created_at);
+
+alter table public.production_orders
+  add column if not exists normalized_quantity numeric(18,3);
+
+create or replace function public.normalize_order_saldo(
+  p_order_number text,
+  p_observation text default null,
+  p_quantity numeric default null
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_cur boolean;
+  v_user_name text;
+  v_obs text;
+begin
+  if public.current_user_role() <> 'admin' and not public.has_permission('orders:normalize') then
+    return 'Seu perfil não tem permissão para normalizar saldo.';
+  end if;
+  v_obs := nullif(trim(coalesce(p_observation,'')),'');
+  if v_obs is null then
+    return 'A observação é obrigatória para normalizar o saldo.';
+  end if;
+  select normalized_saldo into v_cur
+  from public.production_orders where order_number = p_order_number;
+  if v_cur is null then
+    return 'Ordem não encontrada.';
+  end if;
+  select name into v_user_name from public.profiles where id = auth.uid();
+
+  update public.production_orders
+  set normalized_saldo = not v_cur,
+      normalized_reason = case when v_cur then null else v_obs end,
+      normalized_quantity = case when v_cur then null else p_quantity end,
+      normalized_at = case when v_cur then null else now() end,
+      updated_at = now()
+  where order_number = p_order_number;
+
+  if not v_cur then
+    insert into public.order_timeline (order_number, user_id, user_name, action, description, quantity)
+    values (p_order_number, auth.uid(), v_user_name, 'normalizar_saldo', v_obs, p_quantity);
+  else
+    insert into public.order_timeline (order_number, user_id, user_name, action, description, quantity)
+    values (p_order_number, auth.uid(), v_user_name, 'remover_normalizacao', 'Normalização removida.', null);
+  end if;
+
+  insert into public.audit_logs (user_id, action, entity, entity_id, old_value, new_value)
+  values (auth.uid(),
+          case when v_cur then 'remover_normalizacao' else 'normalizar_saldo' end,
+          'production_orders', p_order_number,
+          jsonb_build_object('normalized_saldo', v_cur),
+          jsonb_build_object('normalized_saldo', not v_cur, 'observation', p_observation, 'quantity', p_quantity));
+  perform public.refresh_order_metrics();
+  return 'ok';
+end;
+$$;
+
+create or replace function public.set_receipt_valid(
+  p_receipt_id bigint,
+  p_valid boolean,
+  p_motivo text default null,
+  p_estorno_document text default null
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_cur boolean;
+  v_ord text;
+  v_doc text;
+  v_reason text;
+  v_task_id bigint;
+  v_user_name text;
+  v_estorno text;
+begin
+  if public.current_user_role() <> 'admin' and not public.has_permission('orders:reversal') then
+    return 'Seu perfil não tem permissão para estornar recebimentos.';
+  end if;
+
+  select is_valid, production_order, document_number
+    into v_cur, v_ord, v_doc
+  from public.production_receipts where id = p_receipt_id;
+  if v_cur is null then
+    return 'Recebimento não encontrado.';
+  end if;
+
+  v_estorno := nullif(trim(coalesce(p_estorno_document,'')),'');
+  if not p_valid and v_estorno is null then
+    return 'Informe o número do documento de estorno do SAP.';
+  end if;
+
+  v_reason := coalesce(nullif(trim(coalesce(p_motivo,'')),''), 'Estorno manual');
+  select name into v_user_name from public.profiles where id = auth.uid();
+
+  update public.production_receipts
+  set is_valid = p_valid,
+      reversal_reason = case when p_valid then null else v_reason end,
+      reversed_at = case when p_valid then null else now() end,
+      updated_at = now()
+  where id = p_receipt_id;
+
+  v_task_id := public.resolve_receipt_task(p_receipt_id);
+  if v_task_id is not null then
+    update public.warehouse_tasks
+    set reversal_reason = case when p_valid then null else v_reason end,
+        reversed_at = case when p_valid then null else now() end,
+        updated_at = now()
+    where id = v_task_id;
+  end if;
+
+  if not p_valid then
+    insert into public.order_timeline (order_number, user_id, user_name, action, description, quantity)
+    values (v_ord, auth.uid(), v_user_name, 'estornar_recebimento',
+            format('Estorno do documento %s · Doc. estorno SAP: %s · %s', v_doc, v_estorno, v_reason), null);
+  else
+    insert into public.order_timeline (order_number, user_id, user_name, action, description, quantity)
+    values (v_ord, auth.uid(), v_user_name, 'reativar_recebimento',
+            format('Reativação do documento %s.', v_doc), null);
+  end if;
+
+  insert into public.audit_logs (user_id, action, entity, entity_id, old_value, new_value)
+  values (auth.uid(),
+          case when p_valid then 'reativar_recebimento' else 'estornar_recebimento' end,
+          'production_receipts', p_receipt_id::text,
+          jsonb_build_object('is_valid', v_cur, 'document_number', v_doc, 'production_order', v_ord),
+          jsonb_build_object('is_valid', p_valid, 'reversal_reason', p_motivo, 'uc_task_id', v_task_id, 'estorno_document', p_estorno_document));
+  perform public.refresh_order_metrics();
+  return 'ok';
+end;
+$$;
+
+create or replace view public.sap_reconciliation as
+select
+  po.id,
+  po.order_number,
+  po.material_code,
+  po.material_description,
+  po.lot,
+  po.unit,
+  po.sap_supplied_quantity as sap_quantity,
+  m.pulled_quantity as physical_quantity,
+  case when po.normalized_saldo then 0
+       else round(coalesce(po.sap_supplied_quantity,0) - coalesce(m.pulled_quantity,0), 3)
+  end as difference_quantity,
+  case
+    when po.normalized_saldo then 'ok'
+    when abs(coalesce(po.sap_supplied_quantity,0) - coalesce(m.pulled_quantity,0)) <= 0.001 then 'ok'
+    when coalesce(m.pulled_quantity,0) > coalesce(po.sap_supplied_quantity,0) then 'positive'
+    else 'negative'
+  end as classification
+from public.production_orders po
+left join public.production_order_metrics m on m.id = po.id;
