@@ -27,14 +27,6 @@ interface FilterBarProps {
   showOpenTasks?: boolean;
 }
 
-const STATUS_OPTIONS: { value: GlobalFilters["status"]; label: string }[] = [
-  { value: "", label: "Todos" },
-  { value: "not_started", label: "Não iniciada" },
-  { value: "in_progress", label: "Em andamento" },
-  { value: "completed", label: "Finalizada" },
-  { value: "divergence", label: "Divergência" },
-];
-
 const DIVERGENCE_TYPE_OPTIONS: {
   value: GlobalFilters["divergenceType"];
   label: string;
@@ -158,11 +150,11 @@ export function FilterBar({
             <SelectValue placeholder="Todos" />
           </SelectTrigger>
           <SelectContent>
-            {STATUS_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
+            <SelectItem value="todos">Todos</SelectItem>
+            <SelectItem value="not_started">Não iniciada</SelectItem>
+            <SelectItem value="in_progress">Em andamento</SelectItem>
+            <SelectItem value="completed">Finalizada</SelectItem>
+            <SelectItem value="divergence">Divergência</SelectItem>
           </SelectContent>
         </Select>
       </Field>
