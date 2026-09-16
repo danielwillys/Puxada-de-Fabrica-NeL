@@ -135,6 +135,8 @@ type Builder = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   gt: (col: string, v: number) => any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  lt: (col: string, v: number) => any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ilike: (col: string, v: string) => any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   eq: (col: string, v: unknown) => any;
@@ -164,8 +166,27 @@ function applyFilters(q: Builder, f: GlobalFilters): Builder {
   }
   const lot = f.lot.trim();
   if (lot) q = q.ilike("lot", `%${lot}%`);
-  // "divergence" é um pseudo-status: a filtragem acontece no cliente.
   if (f.status && f.status !== "divergence") q = q.eq("status", f.status);
+  // Divergência: filtrada no servidor (view tem a coluna divergence), para a
+  // contagem e a paginação do relatório refletirem exatamente o filtrado.
+  if (f.status === "divergence") {
+    const t = f.divergenceType || "all";
+    if (t === "falta") q = q.gt("balance_quantity", 0.001);
+    else if (t === "excesso") q = q.gt("excess_quantity", 0.001);
+    else if (t === "sap")
+      q = q.or("divergence.gt.0.001,divergence.lt.-0.001");
+    else
+      q = q.or(
+        "divergence.gt.0.001,divergence.lt.-0.001,balance_quantity.gt.0.001,excess_quantity.gt.0.001",
+      );
+  } else if (f.divergence) {
+    if (f.divergence === "positive") q = q.gt("divergence", 0.001);
+    else if (f.divergence === "negative") q = q.lt("divergence", -0.001);
+    else if (f.divergence === "all")
+      q = q.or("divergence.gt.0.001,divergence.lt.-0.001");
+    else if (f.divergence === "ok")
+      q = q.lte("divergence", 0.001).gte("divergence", -0.001);
+  }
   if (f.openTasksOnly) q = q.gt("open_task_count", 0);
   return q;
 }
