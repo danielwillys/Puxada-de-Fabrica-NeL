@@ -594,16 +594,39 @@ Deno.serve(async (req) => {
       const toInsert = existenceUnknown
         ? []
         : validRows.filter((r) => !existingKeys.has(keyOf(r)));
-      // Recebimentos já existentes NÃO são atualizados: preserva estornos
-      // (is_valid = false) e qualquer edição feita no sistema. A reimportação
-      // apenas insere documentos ainda não registrados. MON e COOISPI seguem
-      // com upsert (atualização de status/datas).
-      const toUpdate =
-        fileType === "recebimento"
-          ? []
-          : existenceUnknown
-            ? validRows
-            : validRows.filter((r) => existingKeys.has(keyOf(r)));
+
+      // Recebimentos: atualiza os existentes (EM/depósito podem mudar entre
+      // arquivos) MAS preserva os estornos (is_valid = false) e qualquer edição
+      // feita no sistema. MON e COOISPI seguem com upsert (status/datas).
+      let toUpdate: typeof validRows;
+      let preserved = 0;
+      if (fileType === "recebimento" && !existenceUnknown) {
+        const estornados = new Set<string>();
+        for (const keyChunk of chunk([...existingKeys], 100)) {
+          const { data: rows } = await supabase
+            .from(table)
+            .select(`${keyCol},is_valid`)
+            .in(keyCol, keyChunk);
+          (rows ?? []).forEach((e) => {
+            if ((e as Record<string, unknown>).is_valid === false) {
+              estornados.add(String((e as Record<string, unknown>)[keyCol]));
+            }
+          });
+        }
+        toUpdate = validRows.filter(
+          (r) => existingKeys.has(keyOf(r)) && !estornados.has(keyOf(r)),
+        );
+        preserved = validRows.filter(
+          (r) => existingKeys.has(keyOf(r)) && estornados.has(keyOf(r)),
+        ).length;
+      } else {
+        toUpdate =
+          fileType === "recebimento"
+            ? []
+            : existenceUnknown
+              ? validRows
+              : validRows.filter((r) => existingKeys.has(keyOf(r)));
+      }
 
       for (const batch of chunk(toInsert, 500)) {
         const { error: insErr } = await supabase.from(table).insert(batch);
@@ -631,6 +654,8 @@ Deno.serve(async (req) => {
         if (updErr) throw new Error(`Falha ao atualizar: ${updErr.message}`);
         updated += batch.length;
       }
+      // Estornos preservados contam como atualizados (não viram "rejeitados").
+      updated += preserved;
     }
 
     // Refresh order status/required quantities (best effort)
