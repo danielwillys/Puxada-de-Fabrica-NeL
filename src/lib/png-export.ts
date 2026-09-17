@@ -16,6 +16,25 @@ function resolveVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+/**
+ * Tamanho real renderizado do SVG. O recharts pode gravar `width="100%"`
+ * (percentual) — `parseFloat("100%")` devolveria 100 e a imagem sairia
+ * estreita. Por isso priorizamos a medida de layout (clientWidth/rect) e só
+ * usamos o atributo quando ele for um número em pixels.
+ */
+function svgSize(svg: SVGSVGElement): { w: number; h: number } {
+  const attr = (name: string) => {
+    const raw = svg.getAttribute(name) ?? "";
+    if (!raw || raw.includes("%")) return 0;
+    const n = parseFloat(raw);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  const rect = svg.getBoundingClientRect();
+  const w = Math.round(svg.clientWidth || rect.width || attr("width") || 900);
+  const h = Math.round(svg.clientHeight || rect.height || attr("height") || 300);
+  return { w: w > 0 ? w : 900, h: h > 0 ? h : 300 };
+}
+
 /** "hsl(240 3.7% 15.9%)" → "hsl(240, 3.7%, 15.9%)" (sintaxe aceita por todos os navegadores). */
 function convertHslSpace(value: string): string {
   if (!value.startsWith("hsl(") || value.includes(",")) return value;
@@ -40,13 +59,8 @@ export function downloadChartPng(
   const svg = container.querySelector("svg");
   if (!svg) return;
 
-  // Tamanho renderizado do gráfico: usa os atributos width/height que o recharts
-  // grava no SVG (sem getBBox — que em alguns navegadores retorna medidas
-  // inconsistentes e colapsa a imagem).
-  const chartW =
-    Math.round(parseFloat(svg.getAttribute("width") ?? "") || svg.clientWidth || 900) || 900;
-  const chartH =
-    Math.round(parseFloat(svg.getAttribute("height") ?? "") || svg.clientHeight || 300) || 300;
+  // Tamanho renderizado do gráfico (largura/altura reais em pixels).
+  const { w: chartW, h: chartH } = svgSize(svg as SVGSVGElement);
 
   // Clona para não mutar a árvore viva e resolve variáveis CSS
   // (hsl(var(--border)) etc.) para valores concretos — o SVG exportado não

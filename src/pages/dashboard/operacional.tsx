@@ -395,10 +395,10 @@ export function OperationalDashboard() {
               <YAxis fontSize={11} stroke="hsl(var(--muted-foreground))" />
               <Tooltip {...CHART_TOOLTIP} />
               <Bar dataKey="pulls" name="Puxadas" fill={C.primary} radius={[3, 3, 0, 0]}>
-                <LabelList dataKey="pulls" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => fmtInt(Number(v))} />
+                <LabelList dataKey="pulls" position="top" fontSize={9} fill="#475569" formatter={(v) => fmtInt(Number(v))} />
               </Bar>
               <Bar dataKey="stores" name="Armazenagens" fill={C.success} radius={[3, 3, 0, 0]}>
-                <LabelList dataKey="stores" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => fmtInt(Number(v))} />
+                <LabelList dataKey="stores" position="top" fontSize={9} fill="#475569" formatter={(v) => fmtInt(Number(v))} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -420,10 +420,10 @@ export function OperationalDashboard() {
               <YAxis fontSize={11} stroke="hsl(var(--muted-foreground))" />
               <Tooltip {...CHART_TOOLTIP} />
               <Bar dataKey="pullQty" name="Qtd puxada" fill={C.primary} radius={[3, 3, 0, 0]}>
-                <LabelList dataKey="pullQty" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => fmtQty(Number(v))} />
+                <LabelList dataKey="pullQty" position="top" fontSize={9} fill="#475569" formatter={(v) => fmtQty(Number(v))} />
               </Bar>
               <Bar dataKey="storeQty" name="Qtd armazenada" fill={C.success} radius={[3, 3, 0, 0]}>
-                <LabelList dataKey="storeQty" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => fmtQty(Number(v))} />
+                <LabelList dataKey="storeQty" position="top" fontSize={9} fill="#475569" formatter={(v) => fmtQty(Number(v))} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -442,7 +442,7 @@ export function OperationalDashboard() {
               <YAxis fontSize={11} stroke="hsl(var(--muted-foreground))" />
               <Tooltip {...CHART_TOOLTIP} />
               <Line type="monotone" dataKey="saldo" name="Saldo" stroke={C.warning} strokeWidth={2} dot={false}>
-                <LabelList dataKey="saldo" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => fmtInt(Number(v))} />
+                <LabelList dataKey="saldo" position="top" fontSize={9} fill="#475569" formatter={(v) => fmtInt(Number(v))} />
               </Line>
             </LineChart>
           </ResponsiveContainer>

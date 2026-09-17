@@ -512,16 +512,16 @@ export function ManagerialDashboard() {
                   <Tooltip {...CHART_TOOLTIP} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="planned" name="Planejado" fill={C.muted} radius={[3, 3, 0, 0]}>
-                    <LabelList dataKey="planned" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => valueLabel(Number(v))} />
+                    <LabelList dataKey="planned" position="top" fontSize={9} fill="#475569" formatter={(v) => valueLabel(Number(v))} />
                   </Bar>
                   <Bar dataKey="produced" name="Apontado" fill={C.primary} radius={[3, 3, 0, 0]}>
-                    <LabelList dataKey="produced" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => valueLabel(Number(v))} />
+                    <LabelList dataKey="produced" position="top" fontSize={9} fill="#475569" formatter={(v) => valueLabel(Number(v))} />
                   </Bar>
                   <Bar dataKey="pulled" name="Puxado" fill={C.success} radius={[3, 3, 0, 0]}>
-                    <LabelList dataKey="pulled" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => valueLabel(Number(v))} />
+                    <LabelList dataKey="pulled" position="top" fontSize={9} fill="#475569" formatter={(v) => valueLabel(Number(v))} />
                   </Bar>
                   <Bar dataKey="pending" name="Pendente" fill={C.danger} radius={[3, 3, 0, 0]}>
-                    <LabelList dataKey="pending" position="top" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => valueLabel(Number(v))} />
+                    <LabelList dataKey="pending" position="top" fontSize={9} fill="#475569" formatter={(v) => valueLabel(Number(v))} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -585,7 +585,7 @@ export function ManagerialDashboard() {
                       dataKey="efficiency"
                       position="top"
                       fontSize={9}
-                      fill="hsl(var(--muted-foreground))"
+                      fill="#475569"
                       formatter={(v) => `${Math.round(Number(v))}%`}
                     />
                   </Line>
@@ -621,7 +621,7 @@ export function ManagerialDashboard() {
                   <YAxis type="category" dataKey="name" fontSize={11} stroke="hsl(var(--muted-foreground))" width={100} />
                   <Tooltip {...CHART_TOOLTIP} />
                   <Bar dataKey="value" name="Excesso" fill={C.danger} radius={[0, 3, 3, 0]}>
-                    <LabelList dataKey="value" position="right" fontSize={9} fill="hsl(var(--muted-foreground))" formatter={(v) => valueLabel(Number(v))} />
+                    <LabelList dataKey="value" position="right" fontSize={9} fill="#475569" formatter={(v) => valueLabel(Number(v))} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -699,7 +699,7 @@ export function ManagerialDashboard() {
                       dataKey="pulled"
                       position="top"
                       fontSize={10}
-                      fill="hsl(var(--muted-foreground))"
+                      fill="#475569"
                       formatter={(v) => valueLabel(Number(v))}
                     />
                   </Area>
