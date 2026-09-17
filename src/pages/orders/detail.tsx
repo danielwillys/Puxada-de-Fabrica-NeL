@@ -58,12 +58,13 @@ import {
   fmtDateTime,
   fmtDurationMinutes,
   fmtQty,
+  fmtTimeFull,
   minutesBetween,
   parseLocalDateTime,
 } from "@/lib/format";
 import { exportCsv, exportExcel } from "@/lib/excel";
 import { buildUcView } from "@/lib/uc-view";
-import { sortRows, type SortState } from "@/lib/sort";
+import { applyColumnFilters, sortRows, type SortState } from "@/lib/sort";
 import { SortableTh } from "@/components/sortable-th";
 import { useOrderMetrics, useOrderReceipts, useOrderTasks, useOrderTimeline } from "@/lib/queries";
 import type { ProductionReceipt } from "@/lib/types";
@@ -201,19 +202,49 @@ export function OrderDetail() {
   const receiptList = useMemo(() => receipts.data ?? [], [receipts.data]);
   // "Pallets / UC da ordem": somente UCs confirmadas à armazenagem (ou estornadas
   // pelo painel). Tarefas estornadas no relatório (task_status='A') são ocultadas.
-  const ucRows = useMemo(() => buildUcView(tasks.data ?? []), [tasks.data]);
+  const ucRows = useMemo(
+    () => buildUcView(tasks.data ?? [], receiptList),
+    [tasks.data, receiptList],
+  );
 
   const [ucSort, setUcSort] = useState<SortState>({ key: "uc", dir: "asc" });
   const [recSort, setRecSort] = useState<SortState>({ key: "document_number", dir: "asc" });
+  const [ucFilters, setUcFilters] = useState<Record<string, string>>({});
+  const [recFilters, setRecFilters] = useState<Record<string, string>>({});
+
+  const ucFiltered = useMemo(
+    () =>
+      applyColumnFilters(ucRows as unknown as Record<string, unknown>[], ucFilters),
+    [ucRows, ucFilters],
+  );
+  const recFiltered = useMemo(
+    () =>
+      applyColumnFilters(
+        receiptList as unknown as Record<string, unknown>[],
+        recFilters,
+      ),
+    [receiptList, recFilters],
+  );
 
   const ucRowsSorted = useMemo(
-    () => sortRows(ucRows as unknown as Record<string, unknown>[], ucSort),
-    [ucRows, ucSort],
+    () => sortRows(ucFiltered as unknown as Record<string, unknown>[], ucSort),
+    [ucFiltered, ucSort],
   );
   const receiptListSorted = useMemo(
-    () => sortRows(receiptList as unknown as Record<string, unknown>[], recSort),
-    [receiptList, recSort],
+    () => sortRows(recFiltered as unknown as Record<string, unknown>[], recSort),
+    [recFiltered, recSort],
   );
+
+  const ucFilterProps = (key: string) => ({
+    filterValue: ucFilters[key] ?? "",
+    onFilterChange: (v: string) =>
+      setUcFilters((f) => ({ ...f, [key]: v })),
+  });
+  const recFilterProps = (key: string) => ({
+    filterValue: recFilters[key] ?? "",
+    onFilterChange: (v: string) =>
+      setRecFilters((f) => ({ ...f, [key]: v })),
+  });
 
   const toggleSort = (setter: (s: SortState) => void, sort: SortState, key: string) => {
     setter(
@@ -236,6 +267,7 @@ export function OrderDetail() {
     const out = ucRowsSorted.map((r) => ({
       UC: r.uc ?? "",
       Documento: r.document ?? "",
+      "Doc. Recebimento": r.receiptDocument ?? "",
       Material: r.material ?? "",
       Descrição: r.description ?? "",
       Lote: r.lot ?? "",
@@ -265,9 +297,9 @@ export function OrderDetail() {
       Quantidade: r.quantity,
       UM: r.unit ?? "",
       "EM (data)": fmtDate(r.goods_receipt_date),
-      "EM (hora)": r.goods_receipt_time ?? "",
+      "EM (hora)": fmtTimeFull(r.goods_receipt_time),
       "Depósito (data)": fmtDate(r.storage_date),
-      "Depósito (hora)": r.storage_time ?? "",
+      "Depósito (hora)": fmtTimeFull(r.storage_time),
       Válido: r.is_valid ? "Sim" : "Não (estornado)",
       "Motivo do estorno": r.reversal_reason ?? "",
       "Data do estorno": fmtDateTime(r.reversed_at),
@@ -501,14 +533,15 @@ export function OrderDetail() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <SortableTh label="UC" sortKey="uc" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
-                  <SortableTh label="Documento" sortKey="document" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
-                  <SortableTh label="Material" sortKey="material" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
-                  <SortableTh label="Lote" sortKey="lot" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
-                  <SortableTh label="PD destino" sortKey="pdDestino" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
-                  <SortableTh label="Qtd." sortKey="quantity" numeric sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
-                  <SortableTh label="UM" sortKey="unit" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
-                  <SortableTh label="Status" sortKey="status" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
+                  <SortableTh label="UC" sortKey="uc" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("uc")} />
+                  <SortableTh label="Documento" sortKey="document" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("document")} />
+                  <SortableTh label="Doc. Receb." sortKey="receiptDocument" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("receiptDocument")} />
+                  <SortableTh label="Material" sortKey="material" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("material")} />
+                  <SortableTh label="Lote" sortKey="lot" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("lot")} />
+                  <SortableTh label="PD destino" sortKey="pdDestino" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("pdDestino")} />
+                  <SortableTh label="Qtd." sortKey="quantity" numeric sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("quantity")} />
+                  <SortableTh label="UM" sortKey="unit" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("unit")} />
+                  <SortableTh label="Status" sortKey="status" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("status")} />
                   <SortableTh label="Puxada" sortKey="pullAt" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
                   <SortableTh label="Armazenagem" sortKey="storageAt" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
                   <SortableTh label="Espera" sortKey="waitMinutes" numeric sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} />
@@ -519,6 +552,7 @@ export function OrderDetail() {
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.uc ?? "—"}</TableCell>
                     <TableCell>{r.document ?? "—"}</TableCell>
+                    <TableCell>{r.receiptDocument ?? "—"}</TableCell>
                     <TableCell>{r.material ?? "—"}</TableCell>
                     <TableCell>{r.lot ?? "—"}</TableCell>
                     <TableCell>{r.pdDestino ?? "—"}</TableCell>
@@ -558,7 +592,7 @@ export function OrderDetail() {
                 ))}
                 {ucRowsSorted.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={12} className="py-8 text-center text-muted-foreground">
                       Nenhuma UC confirmada à armazenagem para esta ordem.
                     </TableCell>
                   </TableRow>
@@ -590,17 +624,17 @@ export function OrderDetail() {
           <Table>
             <TableHeader>
               <TableRow>
-                <SortableTh label="Documento" sortKey="document_number" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
-                <SortableTh label="Produto" sortKey="material_code" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
-                <SortableTh label="Descrição" sortKey="material_description" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
-                <SortableTh label="Lote" sortKey="lot" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
-                <SortableTh label="Qtd." sortKey="quantity" numeric sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
-                <SortableTh label="UM" sortKey="unit" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
-                <SortableTh label="EM (data)" sortKey="goods_receipt_date" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
-                <SortableTh label="EM (hora)" sortKey="goods_receipt_time" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
-                <SortableTh label="Depósito (data)" sortKey="storage_date" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
-                <SortableTh label="Depósito (hora)" sortKey="storage_time" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
-                <SortableTh label="Válido" sortKey="is_valid" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} />
+                <SortableTh label="Documento" sortKey="document_number" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} {...recFilterProps("document_number")} />
+                <SortableTh label="Produto" sortKey="material_code" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} {...recFilterProps("material_code")} />
+                <SortableTh label="Descrição" sortKey="material_description" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} {...recFilterProps("material_description")} />
+                <SortableTh label="Lote" sortKey="lot" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} {...recFilterProps("lot")} />
+                <SortableTh label="Qtd." sortKey="quantity" numeric sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} {...recFilterProps("quantity")} />
+                <SortableTh label="UM" sortKey="unit" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} {...recFilterProps("unit")} />
+                <SortableTh label="EM (data)" sortKey="goods_receipt_date" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} {...recFilterProps("goods_receipt_date")} />
+                <SortableTh label="EM (hora)" sortKey="goods_receipt_time" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} {...recFilterProps("goods_receipt_time")} />
+                <SortableTh label="Depósito (data)" sortKey="storage_date" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} {...recFilterProps("storage_date")} />
+                <SortableTh label="Depósito (hora)" sortKey="storage_time" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} {...recFilterProps("storage_time")} />
+                <SortableTh label="Válido" sortKey="is_valid" sort={recSort} onSort={(k) => toggleSort(setRecSort, recSort, k)} {...recFilterProps("is_valid")} />
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -616,9 +650,9 @@ export function OrderDetail() {
                   <TableCell className="text-right tabular-nums">{fmtQty(r.quantity)}</TableCell>
                   <TableCell>{r.unit ?? "—"}</TableCell>
                   <TableCell>{fmtDate(r.goods_receipt_date)}</TableCell>
-                  <TableCell>{r.goods_receipt_time ?? "—"}</TableCell>
+                  <TableCell>{fmtTimeFull(r.goods_receipt_time)}</TableCell>
                   <TableCell>{fmtDate(r.storage_date)}</TableCell>
-                  <TableCell>{r.storage_time ?? "—"}</TableCell>
+                  <TableCell>{fmtTimeFull(r.storage_time)}</TableCell>
                   <TableCell>
                     {r.is_valid ? (
                       <Badge variant="success">Sim</Badge>

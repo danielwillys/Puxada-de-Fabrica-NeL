@@ -53,7 +53,7 @@ import {
   type ShiftSummary,
 } from "@/lib/performance";
 import { downloadDashboardPng } from "@/lib/png-export";
-import { sortRows, type SortState } from "@/lib/sort";
+import { sortRows, applyColumnFilters, type SortState } from "@/lib/sort";
 import { SortableTh } from "@/components/sortable-th";
 import { useFilters } from "@/context/filters-context";
 import { C, CHART_TOOLTIP, ChartCard, Kpi } from "./shared";
@@ -218,10 +218,24 @@ export function OperationalDashboard() {
   );
 
   const [revSort, setRevSort] = useState<SortState>({ key: "document_number", dir: "asc" });
-  const reversedRowsSorted = useMemo(
-    () => sortRows(reversedRows as unknown as Record<string, unknown>[], revSort).slice(0, 50),
-    [reversedRows, revSort],
+  const [revFilters, setRevFilters] = useState<Record<string, string>>({});
+  const revFiltered = useMemo(
+    () =>
+      applyColumnFilters(
+        reversedRows as unknown as Record<string, unknown>[],
+        revFilters,
+      ),
+    [reversedRows, revFilters],
   );
+  const reversedRowsSorted = useMemo(
+    () => sortRows(revFiltered, revSort).slice(0, 50),
+    [revFiltered, revSort],
+  );
+  const revFilterProps = (key: string) => ({
+    filterValue: revFilters[key] ?? "",
+    onFilterChange: (v: string) =>
+      setRevFilters((f) => ({ ...f, [key]: v })),
+  });
   const toggleRevSort = (key: string) => {
     setRevSort((s) =>
       s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" },
@@ -479,13 +493,13 @@ export function OperationalDashboard() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <SortableTh label="Documento" sortKey="document_number" sort={revSort} onSort={toggleRevSort} />
-                  <SortableTh label="Ordem" sortKey="production_order" sort={revSort} onSort={toggleRevSort} />
-                  <SortableTh label="Material" sortKey="material_code" sort={revSort} onSort={toggleRevSort} />
-                  <SortableTh label="Lote" sortKey="lot" sort={revSort} onSort={toggleRevSort} />
-                  <SortableTh label="Qtd." sortKey="quantity" numeric sort={revSort} onSort={toggleRevSort} />
-                  <SortableTh label="Motivo" sortKey="reversal_reason" sort={revSort} onSort={toggleRevSort} />
-                  <SortableTh label="Data do estorno" sortKey="reversed_at" sort={revSort} onSort={toggleRevSort} />
+                  <SortableTh label="Documento" sortKey="document_number" sort={revSort} onSort={toggleRevSort} {...revFilterProps("document_number")} />
+                  <SortableTh label="Ordem" sortKey="production_order" sort={revSort} onSort={toggleRevSort} {...revFilterProps("production_order")} />
+                  <SortableTh label="Material" sortKey="material_code" sort={revSort} onSort={toggleRevSort} {...revFilterProps("material_code")} />
+                  <SortableTh label="Lote" sortKey="lot" sort={revSort} onSort={toggleRevSort} {...revFilterProps("lot")} />
+                  <SortableTh label="Qtd." sortKey="quantity" numeric sort={revSort} onSort={toggleRevSort} {...revFilterProps("quantity")} />
+                  <SortableTh label="Motivo" sortKey="reversal_reason" sort={revSort} onSort={toggleRevSort} {...revFilterProps("reversal_reason")} />
+                  <SortableTh label="Data do estorno" sortKey="reversed_at" sort={revSort} onSort={toggleRevSort} {...revFilterProps("reversed_at")} />
                 </TableRow>
               </TableHeader>
               <TableBody>
