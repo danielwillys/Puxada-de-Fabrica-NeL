@@ -170,13 +170,14 @@ export function OperationalDashboard() {
     };
     for (const t of tasks.data ?? []) {
       if (t.process_type === "1020" && t.task_status !== "A") {
-        const day = t.operational_pull_day ?? "sem dia";
+        // Sem dia operacional (turno), usa a data real de criação (como na planilha).
+        const day = t.operational_pull_day ?? t.creation_date ?? "sem dia";
         add(day, {
           pulls: (map.get(day)?.pulls ?? 0) + 1,
           pullQty: (map.get(day)?.pullQty ?? 0) + t.quantity,
         });
       } else if (t.process_type === "1012" && t.task_status !== "A") {
-        const day = t.operational_storage_day ?? "sem dia";
+        const day = t.operational_storage_day ?? t.confirmation_date ?? "sem dia";
         add(day, {
           stores: (map.get(day)?.stores ?? 0) + 1,
           storeQty: (map.get(day)?.storeQty ?? 0) + t.quantity,
@@ -191,10 +192,10 @@ export function OperationalDashboard() {
     const processadas = new Map<string, number>();
     for (const t of tasks.data ?? []) {
       if (t.process_type === "1020") {
-        const d = t.operational_pull_day;
+        const d = t.operational_pull_day ?? t.creation_date;
         if (d) entradas.set(d, (entradas.get(d) ?? 0) + 1);
       } else if (t.process_type === "1012") {
-        const d = t.operational_storage_day;
+        const d = t.operational_storage_day ?? t.confirmation_date;
         if (d) processadas.set(d, (processadas.get(d) ?? 0) + 1);
       }
     }
