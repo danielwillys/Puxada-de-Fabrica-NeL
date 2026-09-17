@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   CalendarDays,
@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/auth-context";
 import { ROLE_LABEL } from "@/lib/types";
+import { APP_VERSION } from "@/lib/version";
+import { useSecuritySettings } from "@/lib/security";
 import { ForcePasswordChange } from "@/components/force-password-change";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -147,8 +149,9 @@ function SidebarFooter({ collapsed = false }: { collapsed?: boolean }) {
 }
 
 export function AppLayout() {
-  const { profile, initialized } = useAuth();
+  const { profile, initialized, signOut } = useAuth();
   const location = useLocation();
+  const security = useSecuritySettings();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("converge.sidebar.collapsed") === "1",
@@ -160,6 +163,24 @@ export function AppLayout() {
       return !c;
     });
   };
+
+  // Logout automático por inatividade (0 = desativado).
+  const inactivityMin = security.data?.inactivityLogoutMin ?? 0;
+  useEffect(() => {
+    if (!inactivityMin || inactivityMin <= 0) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => signOut(), inactivityMin * 60_000);
+    };
+    const events = ["pointerdown", "keydown", "scroll", "mousemove", "touchstart"];
+    events.forEach((ev) => window.addEventListener(ev, schedule, { passive: true }));
+    schedule();
+    return () => {
+      clearTimeout(timer);
+      events.forEach((ev) => window.removeEventListener(ev, schedule));
+    };
+  }, [inactivityMin, signOut]);
 
   if (!initialized) {
     return (
@@ -248,7 +269,7 @@ export function AppLayout() {
         </main>
 
         <footer className="shrink-0 border-t px-4 py-3 text-center text-xs text-muted-foreground">
-          Desenvolvido por: Daniel Willys - Supervisor Armazém
+          Desenvolvido por: Daniel Willys - Supervisor Armazém · {APP_VERSION}
         </footer>
       </div>
     </div>

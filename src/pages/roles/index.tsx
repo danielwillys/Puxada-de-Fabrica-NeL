@@ -35,6 +35,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useUserRoles } from "@/lib/queries";
 import { PERMISSIONS, ROLE_LABEL, type Role, type UserRole } from "@/lib/types";
+import { SecurityAccessCard } from "./security-access";
 import { cn } from "@/lib/utils";
 
 interface RoleForm {
@@ -246,6 +247,8 @@ export function RolesPage() {
           </div>
         )}
       </Card>
+
+      <SecurityAccessCard />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[85vh] overflow-auto">
