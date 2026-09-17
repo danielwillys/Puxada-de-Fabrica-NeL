@@ -40,6 +40,21 @@ export function fmtDateTime(iso: string | null | undefined): string {
   });
 }
 
+/** Data e hora com segundos (HH:MM:SS), como no arquivo do SAP. */
+export function fmtDateTimeSec(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = toDate(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
 export function fmtDay(dateOnly: string | null | undefined): string {
   if (!dateOnly) return "—";
   const d = new Date(`${dateOnly}T00:00:00`);

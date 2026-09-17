@@ -43,15 +43,58 @@ function palletKey(
   return `${order ?? ""}\u0000${material ?? ""}\u0000${lot ?? ""}\u0000${quantity}`;
 }
 
-/** Vincula o número do recebimento à UC pela data/hora de armazenagem (=confirmação). */
-function buildReceiptLookup(receipts: ProductionReceipt[]): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const r of receipts) {
-    if (!r.storage_date || !r.storage_time) continue;
-    const key = `${r.production_order ?? ""}\u0000${r.material_code ?? ""}\u0000${r.lot ?? ""}\u0000${r.storage_date}\u0000${r.storage_time}`;
-    if (!map.has(key)) map.set(key, r.document_number);
+/**
+ * Vincula o número do recebimento à UC pelos horários, com tolerância de 2s
+ * (o mesmo critério usado no estorno): primeiro pela armazenagem (storage do
+ * recebimento vs confirmação da tarefa), depois pela EM (goods_receipt vs
+ * criação da tarefa). Assim os casos com 1s de diferença não ficam sem número.
+ */
+function findReceiptDocument(
+  t: WarehouseTask,
+  receipts: ProductionReceipt[],
+): string | null {
+  const samePallet = (r: ProductionReceipt) =>
+    r.production_order === t.production_order &&
+    r.material_code === t.material_code &&
+    (r.lot ?? "") === (t.lot ?? "");
+
+  // 1) Armazenagem: storage do recebimento vs confirmação da tarefa.
+  const tConf = parseLocalDateTime(t.confirmation_date, t.confirmation_time);
+  if (tConf) {
+    let best: string | null = null;
+    let bestDiff = 2000;
+    for (const r of receipts) {
+      if (!samePallet(r)) continue;
+      const s = parseLocalDateTime(r.storage_date, r.storage_time);
+      if (!s) continue;
+      const diff = Math.abs(s.getTime() - tConf.getTime());
+      if (diff <= bestDiff) {
+        bestDiff = diff;
+        best = r.document_number;
+      }
+    }
+    if (best) return best;
   }
-  return map;
+
+  // 2) EM: goods_receipt do recebimento vs criação da tarefa.
+  const tCrea = parseLocalDateTime(t.creation_date, t.creation_time);
+  if (tCrea) {
+    let best: string | null = null;
+    let bestDiff = 2000;
+    for (const r of receipts) {
+      if (!samePallet(r)) continue;
+      const em = parseLocalDateTime(r.goods_receipt_date, r.goods_receipt_time);
+      if (!em) continue;
+      const diff = Math.abs(em.getTime() - tCrea.getTime());
+      if (diff <= bestDiff) {
+        bestDiff = diff;
+        best = r.document_number;
+      }
+    }
+    return best;
+  }
+
+  return null;
 }
 
 export function buildUcView(
@@ -69,8 +112,6 @@ export function buildUcView(
     }
   }
 
-  const receiptByStorage = buildReceiptLookup(receipts);
-
   const rows: UcViewRow[] = [];
   for (const t of tasks) {
     if (t.process_type !== "1020") continue;
@@ -86,18 +127,12 @@ export function buildUcView(
     const wait =
       pullAt && storageAt ? (storageAt.getTime() - pullAt.getTime()) / 60000 : null;
 
-    const receiptDoc = t.confirmation_date && t.confirmation_time
-      ? (receiptByStorage.get(
-          `${t.production_order ?? ""}\u0000${t.material_code ?? ""}\u0000${t.lot ?? ""}\u0000${t.confirmation_date}\u0000${t.confirmation_time}`,
-        ) ?? null)
-      : null;
-
     rows.push({
       id: t.id,
       productionOrder: t.production_order,
       uc: t.source_uc,
       document: t.document,
-      receiptDocument: receiptDoc,
+      receiptDocument: findReceiptDocument(t, receipts),
       material: t.material_code,
       description: t.material_description,
       lot: t.lot,

@@ -56,6 +56,7 @@ import {
 import {
   fmtDate,
   fmtDateTime,
+  fmtDateTimeSec,
   fmtDurationMinutes,
   fmtQty,
   fmtTimeFull,
@@ -311,9 +312,9 @@ export function OrderDetail() {
         ? `Estornado${r.reversalReason ? ` (${r.reversalReason})` : ""}`
         : (TASK_STATUS_META[r.status ?? ""]?.label ?? r.status ?? ""),
       "Puxada por": r.pullAuthor ?? "",
-      "Puxada em": r.pullAt ? fmtDateTime(r.pullAt) : "",
+      "Puxada em": r.pullAt ? fmtDateTimeSec(r.pullAt) : "",
       "Armazenado por": r.storageBy ?? "",
-      "Armazenagem em": r.storageAt ? fmtDateTime(r.storageAt) : "",
+      "Armazenagem em": r.storageAt ? fmtDateTimeSec(r.storageAt) : "",
       "Espera (min)": r.waitMinutes !== null ? Math.round(r.waitMinutes) : "",
     }));
     const base = `ordem_${orderNumber}_ucs_${new Date().toISOString().slice(0, 10)}`;
@@ -604,7 +605,7 @@ export function OrderDetail() {
                         {r.pullAuthor ?? "—"}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {fmtDateTime(r.pullAt)}
+                        {fmtDateTimeSec(r.pullAt)}
                       </span>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
@@ -613,7 +614,7 @@ export function OrderDetail() {
                         {r.storageBy ?? "—"}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {fmtDateTime(r.storageAt)}
+                        {fmtDateTimeSec(r.storageAt)}
                       </span>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
