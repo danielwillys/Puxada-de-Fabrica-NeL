@@ -64,7 +64,7 @@ import {
 } from "@/lib/format";
 import { exportCsv, exportExcel } from "@/lib/excel";
 import { buildUcView } from "@/lib/uc-view";
-import { applyColumnFilters, sortRows, type SortState } from "@/lib/sort";
+import { applyColumnFilters, columnOptions, sortRows, type SortState } from "@/lib/sort";
 import { SortableTh } from "@/components/sortable-th";
 import { useOrderMetrics, useOrderReceipts, useOrderTasks, useOrderTimeline } from "@/lib/queries";
 import type { ProductionReceipt } from "@/lib/types";
@@ -226,6 +226,38 @@ export function OrderDetail() {
     [receiptList, recFilters],
   );
 
+  const ucOptions = useMemo(
+    () =>
+      columnOptions(ucRows as unknown as Record<string, unknown>[], [
+        "uc",
+        "receiptDocument",
+        "material",
+        "lot",
+        "pdDestino",
+        "quantity",
+        "unit",
+        "status",
+      ]),
+    [ucRows],
+  );
+  const recOptions = useMemo(
+    () =>
+      columnOptions(receiptList as unknown as Record<string, unknown>[], [
+        "document_number",
+        "material_code",
+        "material_description",
+        "lot",
+        "quantity",
+        "unit",
+        "goods_receipt_date",
+        "goods_receipt_time",
+        "storage_date",
+        "storage_time",
+        "is_valid",
+      ]),
+    [receiptList],
+  );
+
   const ucRowsSorted = useMemo(
     () => sortRows(ucFiltered as unknown as Record<string, unknown>[], ucSort),
     [ucFiltered, ucSort],
@@ -239,11 +271,13 @@ export function OrderDetail() {
     filterValue: ucFilters[key] ?? "",
     onFilterChange: (v: string) =>
       setUcFilters((f) => ({ ...f, [key]: v })),
+    filterOptions: ucOptions[key] ?? [],
   });
   const recFilterProps = (key: string) => ({
     filterValue: recFilters[key] ?? "",
     onFilterChange: (v: string) =>
       setRecFilters((f) => ({ ...f, [key]: v })),
+    filterOptions: recOptions[key] ?? [],
   });
 
   const toggleSort = (setter: (s: SortState) => void, sort: SortState, key: string) => {
@@ -266,7 +300,6 @@ export function OrderDetail() {
   const exportUcs = (format: "excel" | "csv") => {
     const out = ucRowsSorted.map((r) => ({
       UC: r.uc ?? "",
-      Documento: r.document ?? "",
       "Doc. Recebimento": r.receiptDocument ?? "",
       Material: r.material ?? "",
       Descrição: r.description ?? "",
@@ -534,7 +567,6 @@ export function OrderDetail() {
               <TableHeader>
                 <TableRow>
                   <SortableTh label="UC" sortKey="uc" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("uc")} />
-                  <SortableTh label="Documento" sortKey="document" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("document")} />
                   <SortableTh label="Doc. Receb." sortKey="receiptDocument" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("receiptDocument")} />
                   <SortableTh label="Material" sortKey="material" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("material")} />
                   <SortableTh label="Lote" sortKey="lot" sort={ucSort} onSort={(k) => toggleSort(setUcSort, ucSort, k)} {...ucFilterProps("lot")} />
@@ -551,7 +583,6 @@ export function OrderDetail() {
                 {ucRowsSorted.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="font-medium">{r.uc ?? "—"}</TableCell>
-                    <TableCell>{r.document ?? "—"}</TableCell>
                     <TableCell>{r.receiptDocument ?? "—"}</TableCell>
                     <TableCell>{r.material ?? "—"}</TableCell>
                     <TableCell>{r.lot ?? "—"}</TableCell>
@@ -592,7 +623,7 @@ export function OrderDetail() {
                 ))}
                 {ucRowsSorted.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={11} className="py-8 text-center text-muted-foreground">
                       Nenhuma UC confirmada à armazenagem para esta ordem.
                     </TableCell>
                   </TableRow>

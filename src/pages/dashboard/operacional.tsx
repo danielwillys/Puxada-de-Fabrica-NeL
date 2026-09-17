@@ -53,7 +53,7 @@ import {
   type ShiftSummary,
 } from "@/lib/performance";
 import { downloadDashboardPng } from "@/lib/png-export";
-import { sortRows, applyColumnFilters, type SortState } from "@/lib/sort";
+import { sortRows, applyColumnFilters, columnOptions, type SortState } from "@/lib/sort";
 import { SortableTh } from "@/components/sortable-th";
 import { useFilters } from "@/context/filters-context";
 import { C, CHART_TOOLTIP, ChartCard, Kpi } from "./shared";
@@ -235,7 +235,21 @@ export function OperationalDashboard() {
     filterValue: revFilters[key] ?? "",
     onFilterChange: (v: string) =>
       setRevFilters((f) => ({ ...f, [key]: v })),
+    filterOptions: revOptions[key] ?? [],
   });
+  const revOptions = useMemo(
+    () =>
+      columnOptions(reversedRows as unknown as Record<string, unknown>[], [
+        "document_number",
+        "production_order",
+        "material_code",
+        "lot",
+        "quantity",
+        "reversal_reason",
+        "reversed_at",
+      ]),
+    [reversedRows],
+  );
   const toggleRevSort = (key: string) => {
     setRevSort((s) =>
       s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" },

@@ -45,3 +45,28 @@ export function applyColumnFilters<T extends Record<string, unknown>>(
     ),
   );
 }
+
+export interface ColumnOption {
+  value: string;
+  label: string;
+}
+
+/** Valores distintos de cada coluna (para listar no filtro do cabeçalho). */
+export function columnOptions(
+  rows: Record<string, unknown>[],
+  keys: string[],
+): Record<string, ColumnOption[]> {
+  const out: Record<string, ColumnOption[]> = {};
+  for (const key of keys) {
+    const seen = new Map<string, number>();
+    for (const r of rows) {
+      const v = String(r[key] ?? "").trim();
+      if (!v || v === "—") continue;
+      seen.set(v, (seen.get(v) ?? 0) + 1);
+    }
+    out[key] = [...seen.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "pt-BR", { numeric: true }))
+      .map(([value, count]) => ({ value, label: `${value} (${count})` }));
+  }
+  return out;
+}
