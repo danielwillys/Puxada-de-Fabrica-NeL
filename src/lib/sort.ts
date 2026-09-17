@@ -27,3 +27,21 @@ export function sortRows<T extends Record<string, unknown>>(
     return dir === "asc" ? cmp : -cmp;
   });
 }
+
+/** Filtra as linhas por coluna (texto parcial, insensível a maiúsculas). */
+export function applyColumnFilters<T extends Record<string, unknown>>(
+  rows: T[],
+  filters: Record<string, string>,
+): T[] {
+  const entries = Object.entries(filters).filter(
+    ([, v]) => v && v.trim() !== "",
+  );
+  if (entries.length === 0) return rows;
+  return rows.filter((row) =>
+    entries.every(([key, value]) =>
+      String(row[key] ?? "")
+        .toLowerCase()
+        .includes(value.trim().toLowerCase()),
+    ),
+  );
+}

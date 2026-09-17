@@ -74,6 +74,15 @@ export function toLocalDateString(d: Date): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
+/** Garante o horário no formato HH:MM:SS (completo, como no arquivo do SAP). */
+export function fmtTimeFull(t: string | null | undefined): string {
+  if (!t) return "—";
+  const s = String(t).trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) return s;
+  return `${m[1].padStart(2, "0")}:${m[2]}:${m[3] ?? "00"}`;
+}
+
 /** Minutes between two local (date+time) values. */
 export function minutesBetween(
   startDate: Date | null,

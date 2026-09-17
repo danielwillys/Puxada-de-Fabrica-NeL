@@ -1,4 +1,4 @@
-import type { WarehouseTask } from "./types";
+import type { ProductionReceipt, WarehouseTask } from "./types";
 import { parseLocalDateTime } from "./format";
 
 /**
@@ -16,6 +16,7 @@ export interface UcViewRow {
   productionOrder: string | null;
   uc: string | null;
   document: string | null;
+  receiptDocument: string | null;
   material: string | null;
   description: string | null;
   lot: string | null;
@@ -42,7 +43,21 @@ function palletKey(
   return `${order ?? ""}\u0000${material ?? ""}\u0000${lot ?? ""}\u0000${quantity}`;
 }
 
-export function buildUcView(tasks: WarehouseTask[]): UcViewRow[] {
+/** Vincula o número do recebimento à UC pela data/hora de armazenagem (=confirmação). */
+function buildReceiptLookup(receipts: ProductionReceipt[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const r of receipts) {
+    if (!r.storage_date || !r.storage_time) continue;
+    const key = `${r.production_order ?? ""}\u0000${r.material_code ?? ""}\u0000${r.lot ?? ""}\u0000${r.storage_date}\u0000${r.storage_time}`;
+    if (!map.has(key)) map.set(key, r.document_number);
+  }
+  return map;
+}
+
+export function buildUcView(
+  tasks: WarehouseTask[],
+  receipts: ProductionReceipt[] = [],
+): UcViewRow[] {
   const confirmedStorage = new Set<string>();
   for (const t of tasks) {
     if (t.process_type !== "1012") continue;
@@ -53,6 +68,8 @@ export function buildUcView(tasks: WarehouseTask[]): UcViewRow[] {
       );
     }
   }
+
+  const receiptByStorage = buildReceiptLookup(receipts);
 
   const rows: UcViewRow[] = [];
   for (const t of tasks) {
@@ -69,11 +86,18 @@ export function buildUcView(tasks: WarehouseTask[]): UcViewRow[] {
     const wait =
       pullAt && storageAt ? (storageAt.getTime() - pullAt.getTime()) / 60000 : null;
 
+    const receiptDoc = t.confirmation_date && t.confirmation_time
+      ? (receiptByStorage.get(
+          `${t.production_order ?? ""}\u0000${t.material_code ?? ""}\u0000${t.lot ?? ""}\u0000${t.confirmation_date}\u0000${t.confirmation_time}`,
+        ) ?? null)
+      : null;
+
     rows.push({
       id: t.id,
       productionOrder: t.production_order,
       uc: t.source_uc,
       document: t.document,
+      receiptDocument: receiptDoc,
       material: t.material_code,
       description: t.material_description,
       lot: t.lot,
